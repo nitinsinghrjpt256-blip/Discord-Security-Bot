@@ -60,96 +60,6 @@ daily_cooldowns = {}
 channel_webhooks = {}       
 
 
-class SecurityBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix="!", intents=intents)
-
-    async def setup_hook(self):
-        self.add_view(TicketSelectView())
-        self.add_view(TicketCloseView())
-
-bot = SecurityBot()
-
-
-# --- OwO Helper Functions ---
-def get_user_balance(user_id: int) -> int:
-    if user_id == MY_USER_ID:
-        return 999_999_999_999
-    return user_balances.get(user_id, 1000)
-
-def format_balance(user_id: int) -> str:
-    if user_id == MY_USER_ID:
-        return "1,432,567"
-    return f"{get_user_balance(user_id):,}"
-
-def update_user_balance(user_id: int, amount: int):
-    if user_id == MY_USER_ID:
-        return
-    current = user_balances.get(user_id, 1000)
-    user_balances[user_id] = max(0, current + amount)
-
-
-# --- Anti-Nuke Execution Engine ---
-async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Member, action: str):
-    if executor.id == bot.user.id or guild.id != MY_SERVER_ID:
-        return
-
-    print(f"[ANTINUKE TRIGGERED] Action: {action} by {executor.name} ({executor.id})", flush=True)
-
-    try:
-        dangerous_roles = [r for r in executor.roles if r.name != "@everyone" and r < guild.me.top_role]
-        if dangerous_roles:
-            await executor.remove_roles(*dangerous_roles, reason=f"Anti-Nuke: {action}")
-    except Exception as e:
-        print(f"[ROLE STRIP ERROR]: {e}", flush=True)
-
-    try:
-        await guild.ban(executor, reason=f"Anti-Nuke Protection: Unauthorized {action}", delete_message_days=0)
-        print(f"[ANTINUKE SUCCESS] {executor.name} banned instantly!", flush=True)
-    except Exception as e:
-        print(f"[BAN ERROR]: {e}", flush=True)
-
-    try:
-        owner = guild.owner
-        if owner and owner.id != executor.id:
-            await owner.send(
-                f"🚨 **HIGH SECURITY ANTI-NUKE ALERT** 🚨\n\n"
-                f"• **Offender:** `{executor.name}` (`{executor.id}`)\n"
-                f"• **Action Detected:** `{action}`\n"
-                f"• **Status:** Roles Stripped & Ban Applied Immediately."
-            )
-    except Exception:
-        pass
-
-
-# --- Channel Identity Webhook Sender ---
-async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None):
-    if not channel or channel.guild.id != MY_SERVER_ID:
-        return None
-    try:
-        webhook = channel_webhooks.get(channel.id)
-        if not webhook:
-            webhooks = await channel.webhooks()
-            webhook = discord.utils.get(webhooks, name="PX-Identity-Hook")
-            if not webhook:
-                webhook = await channel.create_webhook(name="PX-Identity-Hook")
-            channel_webhooks[channel.id] = webhook
-
-        avatar_url = bot.user.display_avatar.url if bot.user else None
-        if view:
-            return await channel.send(content=content, embed=embed, view=view)
-
-        return await webhook.send(
-            content=content,
-            embed=embed,
-            username=bot_name,
-            avatar_url=avatar_url,
-            wait=True
-        )
-    except Exception:
-        return await channel.send(content=content, embed=embed, view=view)
-
-
 # --- 3. AESTHETIC TICKET SYSTEM COMPONENTS ---
 
 class TicketCloseView(discord.ui.View):
@@ -166,25 +76,28 @@ class TicketCloseView(discord.ui.View):
             print(f"Error deleting ticket channel: {e}")
 
 
+# Pre-defined Options list (Never empty to prevent Discord API 50035 error)
+TICKET_OPTIONS = [
+    discord.SelectOption(label="PC PANEL • FULL VIP (EXE)", description="Aimkill, Headshot, Silent Aim, ESP - PC", emoji="💻"),
+    discord.SelectOption(label="PC PANEL • STREAMER BYPASS", description="Stream-Proof undetected bypass for PC", emoji="🖥️"),
+    discord.SelectOption(label="PC PANEL • INTERNAL INJECTION", description="Ultra-smooth internal memory panel", emoji="⚡"),
+    discord.SelectOption(label="ANDROID INJECTOR • ROOT / NON-ROOT", description="Auto Headshot, Aimlock, 32/64 Bit Android", emoji="📱"),
+    discord.SelectOption(label="ANDROID INJECTOR • LIB BYPASS VIP", description="100% Main ID Safe Lib Memory Injector", emoji="🛡️"),
+    discord.SelectOption(label="ANDROID INJECTOR • EMOTE & VAULT", description="Rare bundles & all emotes unlock injector", emoji="✨"),
+    discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
+    discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
+    discord.SelectOption(label="FF ID MARKET • BUY / SELL", description="Verified high-level Free Fire ID deals", emoji="🛒"),
+    discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
+    discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct support from Super Admin PERSISTX", emoji="🆘")
+]
+
 class TicketSelect(discord.ui.Select):
     def __init__(self):
-        options = [
-            discord.SelectOption(label="PC PANEL • FULL VIP (EXE)", description="Aimkill, Headshot, Silent Aim, ESP - PC", emoji="💻"),
-            discord.SelectOption(label="PC PANEL • STREAMER BYPASS", description="Stream-Proof undetected bypass for PC", emoji="🖥️"),
-            discord.SelectOption(label="PC PANEL • INTERNAL INJECTION", description="Ultra-smooth internal memory panel", emoji="⚡"),
-            discord.SelectOption(label="ANDROID INJECTOR • ROOT / NON-ROOT", description="Auto Headshot, Aimlock, 32/64 Bit Android", emoji="📱"),
-            discord.SelectOption(label="ANDROID INJECTOR • LIB BYPASS VIP", description="100% Main ID Safe Lib Memory Injector", emoji="🛡️"),
-            discord.SelectOption(label="ANDROID INJECTOR • EMOTE & VAULT", description="Rare bundles & all emotes unlock injector", emoji="✨"),
-            discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
-            discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
-            discord.SelectOption(label="FF ID MARKET • BUY / SELL", description="Verified high-level Free Fire ID deals", emoji="🛒"),
-            discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
-            discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct support from Super Admin PERSISTX", emoji="🆘")
-        ]
         super().__init__(
             placeholder="Select PC Panel or Android Injector... 🛍️",
             min_values=1,
             max_values=1,
+            options=TICKET_OPTIONS,
             custom_id="px_ticket_select_menu"
         )
 
@@ -279,6 +192,96 @@ def get_ticket_panel_embed(guild):
     embed.set_author(name="PX TICKET KING • PERSISTX", icon_url=guild.icon.url if guild.icon else None)
     embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Store", icon_url=guild.icon.url if guild.icon else None)
     return embed
+
+
+class SecurityBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
+
+    async def setup_hook(self):
+        self.add_view(TicketSelectView())
+        self.add_view(TicketCloseView())
+
+bot = SecurityBot()
+
+
+# --- OwO Helper Functions ---
+def get_user_balance(user_id: int) -> int:
+    if user_id == MY_USER_ID:
+        return 999_999_999_999
+    return user_balances.get(user_id, 1000)
+
+def format_balance(user_id: int) -> str:
+    if user_id == MY_USER_ID:
+        return "1,432,567"
+    return f"{get_user_balance(user_id):,}"
+
+def update_user_balance(user_id: int, amount: int):
+    if user_id == MY_USER_ID:
+        return
+    current = user_balances.get(user_id, 1000)
+    user_balances[user_id] = max(0, current + amount)
+
+
+# --- Anti-Nuke Execution Engine ---
+async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Member, action: str):
+    if executor.id == bot.user.id or guild.id != MY_SERVER_ID:
+        return
+
+    print(f"[ANTINUKE TRIGGERED] Action: {action} by {executor.name} ({executor.id})", flush=True)
+
+    try:
+        dangerous_roles = [r for r in executor.roles if r.name != "@everyone" and r < guild.me.top_role]
+        if dangerous_roles:
+            await executor.remove_roles(*dangerous_roles, reason=f"Anti-Nuke: {action}")
+    except Exception as e:
+        print(f"[ROLE STRIP ERROR]: {e}", flush=True)
+
+    try:
+        await guild.ban(executor, reason=f"Anti-Nuke Protection: Unauthorized {action}", delete_message_days=0)
+        print(f"[ANTINUKE SUCCESS] {executor.name} banned instantly!", flush=True)
+    except Exception as e:
+        print(f"[BAN ERROR]: {e}", flush=True)
+
+    try:
+        owner = guild.owner
+        if owner and owner.id != executor.id:
+            await owner.send(
+                f"🚨 **HIGH SECURITY ANTI-NUKE ALERT** 🚨\n\n"
+                f"• **Offender:** `{executor.name}` (`{executor.id}`)\n"
+                f"• **Action Detected:** `{action}`\n"
+                f"• **Status:** Roles Stripped & Ban Applied Immediately."
+            )
+    except Exception:
+        pass
+
+
+# --- Channel Identity Webhook Sender ---
+async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None):
+    if not channel or channel.guild.id != MY_SERVER_ID:
+        return None
+    try:
+        webhook = channel_webhooks.get(channel.id)
+        if not webhook:
+            webhooks = await channel.webhooks()
+            webhook = discord.utils.get(webhooks, name="PX-Identity-Hook")
+            if not webhook:
+                webhook = await channel.create_webhook(name="PX-Identity-Hook")
+            channel_webhooks[channel.id] = webhook
+
+        avatar_url = bot.user.display_avatar.url if bot.user else None
+        if view:
+            return await channel.send(content=content, embed=embed, view=view)
+
+        return await webhook.send(
+            content=content,
+            embed=embed,
+            username=bot_name,
+            avatar_url=avatar_url,
+            wait=True
+        )
+    except Exception:
+        return await channel.send(content=content, embed=embed, view=view)
 
 
 # --- 4. AUTO-CATEGORY SYNC ---
@@ -416,7 +419,7 @@ async def on_member_join(member):
                 f"**Member Information**\n"
                 f"• **Username:** `{member.name}`\n"
                 f"• **Invited By:** {inviter_display}\n"
-                f"• **Total Invites:** `{total_invites}`\n"
+                f"• **Total Invites:** `{total_invites}`\n\n"
                 f"• **Member Count:** `#{guild.member_count}`\n\n"
                 f"**Important Channels**\n"
                 f"📜 **Rules:** <#{RULE_CHANNEL_ID}>\n"
@@ -574,7 +577,7 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 9. Ready Event (Auto-Post Panel + Instant Guild Slash Sync) ---
+# --- 9. Ready Event (Auto-Sync & Setup) ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -601,11 +604,10 @@ async def on_ready():
                 pass
 
 
-# --- 10. SLASH COMMANDS (Instant Defer Protected) ---
+# --- 10. SLASH COMMANDS ---
 
 @bot.tree.command(name="pxticketsetup", description="Deploy the official ticket support panel")
 async def pxticketsetup(interaction: discord.Interaction):
-    # 1. Instant defer: Application did not respond error fix
     await interaction.response.defer(ephemeral=True)
 
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
