@@ -32,14 +32,14 @@ class SecurityBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Global slash commands sync
         await self.tree.sync()
         print("Slash Commands successfully sync ho gaye!")
 
 bot = SecurityBot()
 
-# Whitelist User IDs (Aapki ID safe rahegi)
-WHITELIST_USERS = [1525179499602509977]
+# Aapki User ID (Whitelist + DM Reports ke liye)
+MY_USER_ID = 1525179499602509977
+WHITELIST_USERS = [MY_USER_ID]
 
 # Anti-Nuke Settings (5 second me 2 se zyada deletions par direct ban)
 channel_deletions = {}
@@ -47,8 +47,11 @@ role_deletions = {}
 THRESHOLD = 2          
 WINDOW_SECONDS = 5
 
+# Active giveaways track karne ke liye
+active_giveaways = {}
+
 async def take_anti_nuke_action(guild, executor, action_name):
-    """Attacker chahe koi bhi ho, direct ban karega (Whitelist chhodkar)"""
+    """Attacker ko direct ban karega (Whitelist chhodkar)"""
     if executor.id == guild.owner_id or executor.id == bot.user.id or executor.id in WHITELIST_USERS:
         return
 
@@ -97,9 +100,43 @@ async def on_guild_role_delete(role):
             await take_anti_nuke_action(guild, executor, "Role Deletions")
 
 
-# --- 4. Slash Commands ---
+# --- 4. Real-Time Giveaway Participant Tracking (DM to You) ---
+@bot.event
+async def on_raw_reaction_add(payload):
+    if payload.message_id in active_giveaways and str(payload.emoji) == "🎉":
+        if payload.user_id == bot.user.id:
+            return
+        
+        giveaway_data = active_giveaways[payload.message_id]
+        prize = giveaway_data["prize"]
+        
+        guild = bot.get_guild(payload.guild_id)
+        channel = bot.get_channel(payload.channel_id)
+        if not channel:
+            return
 
-# 1. Giveaway with Live Countdown Timer
+        try:
+            msg = await channel.fetch_message(payload.message_id)
+            reaction = discord.utils.get(msg.reactions, emoji="🎉")
+            users = [u async for u in reaction.users() if not u.bot]
+            total_count = len(users)
+
+            # Aapko DM bhejna
+            my_user = await bot.fetch_user(MY_USER_ID)
+            joined_user = guild.get_member(payload.user_id) or await bot.fetch_user(payload.user_id)
+            await my_user.send(
+                f"📥 **New Entry in Giveaway!**\n"
+                f"🎁 **Prize:** `{prize}`\n"
+                f"👤 **User:** `{joined_user.name}` (ID: `{joined_user.id}`)\n"
+                f"📊 **Total Participants:** `{total_count}`"
+            )
+        except Exception as e:
+            print(f"Reaction add tracking error: {e}")
+
+
+# --- 5. Slash Commands ---
+
+# 1. Giveaway Command (With @everyone @here & Live Timer)
 @bot.tree.command(name="giveaway", description="Naya giveaway start karein")
 @app_commands.describe(
     prize="Giveaway ka prize (e.g., 1 MONTH NITRO ID)",
@@ -108,13 +145,12 @@ async def on_guild_role_delete(role):
 )
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
     if not interaction.user.guild_permissions.manage_guild:
-        await interaction.response.send_message("Aapke paas giveaway host karne ki permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("Aapke paas permission nahi hai!", ephemeral=True)
         return
 
     end_time = datetime.utcnow() + timedelta(minutes=duration_minutes)
     unix_timestamp = int(end_time.timestamp())
 
-    # Live countdown embed (Discord is timer ko automatically count down karta hai)
     embed = discord.Embed(
         title=f"🎁 {prize.upper()} 🎁",
         description=(
@@ -129,9 +165,17 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     embed.set_footer(text="Ends at")
     embed.timestamp = end_time
 
-    await interaction.response.send_message("🎉 **New Giveaway** 🎉", embed=embed)
+    # @everyone aur @here ke sath send karein
+    await interaction.response.send_message(
+        content="@everyone @here 🎉 **New Giveaway** 🎉",
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions(everyone=True)
+    )
     msg = await interaction.original_response()
     await msg.add_reaction("🎉")
+
+    # Track giveaway message
+    active_giveaways[msg.id] = {"prize": prize}
 
     # Time wait
     await asyncio.sleep(duration_minutes * 60)
@@ -139,12 +183,16 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     try:
         updated_msg = await interaction.channel.fetch_message(msg.id)
     except discord.NotFound:
+        active_giveaways.pop(msg.id, None)
         return
 
     reaction = discord.utils.get(updated_msg.reactions, emoji="🎉")
     users = [user async for user in reaction.users() if not user.bot]
 
-    # Original embed update (Ended mark)
+    # Active tracker se hatana
+    active_giveaways.pop(msg.id, None)
+
+    # Embed mark as Ended
     embed.title = f"🎁 {prize.upper()} (ENDED) 🎁"
     embed.description = (
         f"• **Winners:** {winners}\n"
@@ -155,9 +203,10 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     await updated_msg.edit(embed=embed)
 
     if not users:
-        await interaction.channel.send(f"Giveaway ended for **{prize}**! Koi valid participant nahi mila.")
+        await interaction.channel.send(f"Giveaway ended for **{prize}**! Koi valid entry nahi aayi.")
         return
 
+    # Pick Winners
     actual_winners_count = min(len(users), winners)
     selected_winners = random.sample(users, actual_winners_count)
     winners_mention = ", ".join([w.mention for w in selected_winners])
@@ -172,6 +221,22 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         color=discord.Color.green()
     )
     await interaction.channel.send(content=f"Badhai ho {winners_mention}! Aapne **{prize}** jeet liya hai! 🥳", embed=end_embed)
+
+    # Aapko pura report DM me bhejna
+    try:
+        my_user = await bot.fetch_user(MY_USER_ID)
+        participants_names = "\n".join([f"- {u.name} (`{u.id}`)" for u in users])
+        if len(participants_names) > 1500:
+            participants_names = participants_names[:1500] + "\n...aur bhi participants"
+        
+        await my_user.send(
+            f"📊 **Giveaway Final Summary: {prize}**\n"
+            f"• **Total Participants:** `{len(users)}`\n"
+            f"• **Winner(s):** {winners_mention}\n\n"
+            f"📋 **Participant List:**\n{participants_names}"
+        )
+    except Exception as e:
+        print(f"Summary DM send karne me error: {e}")
 
 
 # 2. Clear Chat Command
@@ -233,10 +298,10 @@ async def ping(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
-    print("Anti-Nuke aur Slash Commands ready hain!")
+    print("Anti-Nuke, Live Tracking aur Slash Commands ready hain!")
 
 
-# --- 5. Start Execution ---
+# --- 6. Start Execution ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
