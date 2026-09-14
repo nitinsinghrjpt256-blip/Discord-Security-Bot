@@ -32,7 +32,6 @@ intents.guilds = True
 intents.invites = True          
 intents.reactions = True        
 
-# Configuration Constants
 MY_SERVER_ID = 1525181999147388958             # Target Guild ID
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = []
@@ -583,16 +582,14 @@ async def on_ready():
     print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
     print(f"==========================================\n", flush=True)
 
-    # Force Guild Slash Commands Sync to appear instantly on UI
     try:
         guild_obj = discord.Object(id=MY_SERVER_ID)
         bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
-        print(f"[SLASH-SYNC] Successfully synced {len(synced)} slash commands directly to Guild!", flush=True)
+        print(f"[SLASH-SYNC] Synced {len(synced)} commands directly to Guild ID: {MY_SERVER_ID}!", flush=True)
     except Exception as e:
         print(f"[SLASH-SYNC ERROR]: {e}", flush=True)
 
-    # Invite Cache
     for guild in list(bot.guilds):
         if guild.id != MY_SERVER_ID:
             await guild.leave()
@@ -603,39 +600,30 @@ async def on_ready():
             except Exception:
                 pass
 
-            # Auto Check & Post Ticket Panel
-            try:
-                t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
-                if t_channel:
-                    history = [msg async for msg in t_channel.history(limit=5)]
-                    already_posted = any(msg.author.id == bot.user.id and len(msg.embeds) > 0 for msg in history)
-                    if not already_posted:
-                        embed = get_ticket_panel_embed(guild)
-                        view = TicketSelectView()
-                        await t_channel.send(embed=embed, view=view)
-                        print(f"[AUTO-DEPLOY] Ticket panel posted in #{t_channel.name}!", flush=True)
-            except Exception as e:
-                print(f"[AUTO-DEPLOY ERROR]: {e}", flush=True)
 
+# --- 10. SLASH COMMANDS (Instant Defer Protected) ---
 
-# --- 10. SLASH COMMANDS ---
-
-# Official Setup Slash Command
 @bot.tree.command(name="pxticketsetup", description="Deploy the official ticket support panel")
 async def pxticketsetup(interaction: discord.Interaction):
+    # 1. Instant defer: Application did not respond error fix
+    await interaction.response.defer(ephemeral=True)
+
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
-        await interaction.response.send_message("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
+        await interaction.followup.send("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
         return
 
     channel = interaction.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
     if not channel:
-        await interaction.response.send_message(f"❌ Ticket Channel `{TICKET_PANEL_CHANNEL_ID}` nahi mila!", ephemeral=True)
+        await interaction.followup.send(f"❌ Ticket Channel `{TICKET_PANEL_CHANNEL_ID}` nahi mila! Check permissions.", ephemeral=True)
         return
 
-    embed = get_ticket_panel_embed(interaction.guild)
-    view = TicketSelectView()
-    await channel.send(embed=embed, view=view)
-    await interaction.response.send_message(f"✅ Aesthetic ticket panel successfully sent to {channel.mention}!", ephemeral=True)
+    try:
+        embed = get_ticket_panel_embed(interaction.guild)
+        view = TicketSelectView()
+        await channel.send(embed=embed, view=view)
+        await interaction.followup.send(f"✅ Aesthetic ticket panel successfully sent to {channel.mention}!", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error sending panel: `{e}`", ephemeral=True)
 
 
 class OwOGroup(app_commands.Group):
