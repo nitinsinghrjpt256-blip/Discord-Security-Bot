@@ -42,7 +42,8 @@ class SecurityBot(commands.Bot):
 
 bot = SecurityBot()
 
-# IDs Configuration
+# --- Server & Identity Configuration ---
+MY_SERVER_ID = 1525181999147388958             # Sirf issi server me bot chalega
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = []
 
@@ -54,7 +55,9 @@ OWO_CHANNEL_ID = 1548770349351575632           # PX OWO BOT
 CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
 
-# Anti-Nuke Caches
+ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
+
+# Caches
 invites_cache = {}          
 user_invites = {}           
 member_invited_by = {}      
@@ -69,25 +72,24 @@ channel_webhooks = {}
 # --- OwO Helper Functions ---
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
-        return 999_999_999_999  # Unlimited backend balance
+        return 999_999_999_999
     return user_balances.get(user_id, 1000)
 
 def format_balance(user_id: int) -> str:
-    """Aapki ID ke liye locked 1,432,567 show karega"""
     if user_id == MY_USER_ID:
         return "1,432,567"
     return f"{get_user_balance(user_id):,}"
 
 def update_user_balance(user_id: int, amount: int):
     if user_id == MY_USER_ID:
-        return  # Deduct nahi hoga
+        return
     current = user_balances.get(user_id, 1000)
     user_balances[user_id] = max(0, current + amount)
 
 
 # --- Anti-Nuke Execution Engine ---
 async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Member, action: str):
-    if executor.id == bot.user.id:
+    if executor.id == bot.user.id or guild.id != MY_SERVER_ID:
         return
 
     print(f"[ANTINUKE TRIGGERED] Action: {action} by {executor.name} ({executor.id})", flush=True)
@@ -121,7 +123,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
 
 # --- Channel Identity Webhook Sender ---
 async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None):
-    if not channel:
+    if not channel or channel.guild.id != MY_SERVER_ID:
         return None
     try:
         webhook = channel_webhooks.get(channel.id)
@@ -147,10 +149,37 @@ async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, c
         return await channel.send(content=content, embed=embed, view=view)
 
 
-# --- 3. HIGH-LEVEL ANTI-NUKE LISTENERS ---
+# --- 3. SERVER AUTHORIZATION & AUTO-LEAVE SYSTEM ---
+@bot.event
+async def on_guild_join(guild):
+    """Koi doosre server me bot add kare to auto-leave karega"""
+    if guild.id != MY_SERVER_ID:
+        print(f"[UNAUTHORIZED SERVER DETECTED] Leaving guild: {guild.name} ({guild.id})", flush=True)
+        try:
+            for channel in guild.text_channels:
+                if channel.permissions_for(guild.me).send_messages:
+                    await channel.send(ACCESS_DENIED_MSG)
+                    break
+        except Exception:
+            pass
+        await guild.leave()
+
+
+@bot.tree.interaction_check
+async def global_slash_check(interaction: discord.Interaction):
+    """Sabhi slash commands ke liye server lock"""
+    if not interaction.guild or interaction.guild.id != MY_SERVER_ID:
+        await interaction.response.send_message(ACCESS_DENIED_MSG, ephemeral=True)
+        return False
+    return True
+
+
+# --- 4. HIGH-LEVEL ANTI-NUKE LISTENERS ---
 
 @bot.event
 async def on_guild_channel_delete(channel):
+    if channel.guild.id != MY_SERVER_ID:
+        return
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
@@ -167,6 +196,8 @@ async def on_guild_channel_delete(channel):
 
 @bot.event
 async def on_guild_role_delete(role):
+    if role.guild.id != MY_SERVER_ID:
+        return
     guild = role.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.role_delete):
         executor = entry.user
@@ -178,6 +209,8 @@ async def on_guild_role_delete(role):
 
 @bot.event
 async def on_member_join(member):
+    if member.guild.id != MY_SERVER_ID:
+        return
     guild = member.guild
 
     if member.bot:
@@ -295,6 +328,8 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_ban(guild, user):
+    if guild.id != MY_SERVER_ID:
+        return
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.ban):
         executor = entry.user
         if executor.id != bot.user.id:
@@ -302,6 +337,8 @@ async def on_member_ban(guild, user):
 
 @bot.event
 async def on_guild_update(before, after):
+    if after.id != MY_SERVER_ID:
+        return
     async for entry in after.audit_logs(limit=1, action=discord.AuditLogAction.guild_update):
         executor = entry.user
         if executor.id != bot.user.id:
@@ -313,6 +350,8 @@ async def on_guild_update(before, after):
 
 @bot.event
 async def on_webhooks_update(channel):
+    if channel.guild.id != MY_SERVER_ID:
+        return
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.webhook_create):
         executor = entry.user
@@ -324,7 +363,7 @@ async def on_webhooks_update(channel):
                 pass
 
 
-# --- 4. Interactive Mines Game View ---
+# --- 5. Interactive Mines Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -448,22 +487,30 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 5. Ready Event ---
+# --- 6. Ready Event ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
     print(f"[ONLINE] Logged in as: {bot.user.name} ({bot.user.id})", flush=True)
+    print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
     print(f"==========================================\n", flush=True)
 
-    for guild in bot.guilds:
-        try:
-            guild_invites = await guild.invites()
-            invites_cache[guild.id] = {invite.code: invite.uses for invite in guild_invites}
-        except Exception:
-            pass
+    for guild in list(bot.guilds):
+        if guild.id != MY_SERVER_ID:
+            print(f"[AUTO-LEAVE] Unknown guild: {guild.name} ({guild.id})", flush=True)
+            await guild.leave()
+        else:
+            try:
+                guild_invites = await guild.invites()
+                invites_cache[guild.id] = {invite.code: invite.uses for invite in guild_invites}
+            except Exception:
+                pass
+
 
 @bot.event
 async def on_member_remove(member):
+    if member.guild.id != MY_SERVER_ID:
+        return
     guild = member.guild
     leave_channel = guild.get_channel(LEAVE_CHANNEL_ID)
 
@@ -487,7 +534,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 6. OwO Mini-Games ---
+# --- 7. OwO Mini-Games (Server Lock Protected) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -497,6 +544,11 @@ async def on_message(message):
     lowered = content.lower()
 
     if lowered.startswith("owo") or lowered.startswith("px owo"):
+        # Other servers get instant error
+        if message.guild.id != MY_SERVER_ID:
+            await message.channel.send(ACCESS_DENIED_MSG)
+            return
+
         if message.channel.id != OWO_CHANNEL_ID:
             return
 
@@ -597,16 +649,16 @@ async def on_message(message):
                 winnings = bet * 4
                 update_user_balance(message.author.id, winnings)
                 display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n🔥 **JACKPOT!** Won **{winnings:,}** Coins! (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n🔥 **JACKPOT!** Won **{winnings:,}** Coins!")
             elif r1 == r2 or r2 == r3 or r1 == r3:
                 winnings = int(bet * 1.5)
                 update_user_balance(message.author.id, winnings - bet)
                 display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n✨ Small Win! Won **{winnings:,}** Coins! (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n✨ Small Win! Won **{winnings:,}** Coins!")
             else:
                 update_user_balance(message.author.id, -bet)
                 display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n💔 Lost **{bet:,}** coins. (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n💔 Lost **{bet:,}** coins.")
 
         elif subcmd in ["give", "pay", "send"]:
             if len(message.mentions) == 0 or len(parts) < 4:
@@ -630,7 +682,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 7. Slash Commands Suite ---
+# --- 8. Slash Commands Suite ---
 class OwOGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="owo", description="OwO Mini-Game & Economy Commands")
@@ -704,7 +756,7 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
 
 
-# --- 8. Execution Start ---
+# --- 9. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
