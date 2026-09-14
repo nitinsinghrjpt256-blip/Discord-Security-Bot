@@ -41,7 +41,6 @@ bot = SecurityBot()
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = [MY_USER_ID]
 
-# Updated Welcome Channel ID
 WELCOME_CHANNEL_ID = 1525182000825237648
 LEAVE_CHANNEL_ID = 1548745646717014029
 
@@ -59,6 +58,39 @@ invites_cache = {}          # guild_id: {code: uses}
 user_invites = {}           # inviter_id: total_invites_count
 member_invited_by = {}      # member_id: inviter_id
 active_giveaways = {}
+
+
+async def auto_apply_bot_permissions(guild: discord.Guild):
+    """Server ke saare categories aur VCs me permissions auto update karega"""
+    bot_member = guild.me
+    if not bot_member:
+        return
+
+    overwrites = discord.PermissionOverwrite(
+        view_channel=True,
+        connect=True,
+        speak=True,
+        stream=True,
+        mute_members=True,
+        deafen_members=True,
+        move_members=True,
+        use_voice_activation=True,
+        send_messages=True,
+        embed_links=True,
+        attach_files=True,
+        read_message_history=True,
+        manage_channels=True,
+        manage_permissions=True
+    )
+
+    for channel in guild.channels:
+        try:
+            current_perms = channel.overwrites_for(bot_member)
+            if not (current_perms.view_channel and current_perms.connect and current_perms.speak):
+                await channel.set_permissions(bot_member, overwrite=overwrites, reason="Auto Sync Bot Channel Permissions")
+        except Exception as e:
+            print(f"Error setting perms in {channel.name}: {e}")
+
 
 async def take_anti_nuke_action(guild, executor, action_name):
     """Attacker chahe koi bhi role rakhta ho, direct ban karega"""
@@ -111,7 +143,7 @@ async def on_guild_role_delete(role):
             await take_anti_nuke_action(guild, executor, "Role Deletions")
 
 
-# --- 4. Invite Tracker Caching & Listeners ---
+# --- 4. Ready Event ---
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
@@ -122,8 +154,10 @@ async def on_ready():
             invites_cache[guild.id] = {invite.code: invite.uses for invite in guild_invites}
         except Exception as e:
             print(f"Failed to fetch invites for guild {guild.name}: {e}")
+
+        asyncio.create_task(auto_apply_bot_permissions(guild))
             
-    print("PX Security, Giveaway & Invite Tracker System is Online!")
+    print("PX Security, Giveaway, Invites & Auto-Nick System is Online!")
 
 @bot.event
 async def on_invite_create(invite):
@@ -137,13 +171,24 @@ async def on_invite_delete(invite):
         del invites_cache[invite.guild.id][invite.code]
 
 
-# --- 5. Member Join Event (Professional Welcome Card with Avatar + Channels) ---
+# --- 5. Member Join Event (Auto PX Nickname + Welcome Embed + DM) ---
 @bot.event
 async def on_member_join(member):
+    print(f"[JOIN EVENT] {member.name} ({member.id}) ne server join kiya!")
     guild = member.guild
+
+    # 1. Auto Nickname: Agar naam me PX nahi hai to PX | add karein
+    try:
+        current_name = member.display_name
+        if not current_name.upper().startswith("PX"):
+            new_nick = f"PX | {current_name}"[:32]  # Discord limit 32 characters
+            await member.edit(nick=new_nick, reason="Auto PX tag on join")
+            print(f"[AUTO-NICK] {member.name} ka nick change karke {new_nick} kiya gaya.")
+    except Exception as e:
+        print(f"[AUTO-NICK ERROR] {member.name} ka nick change nahi ho paya: {e}")
+
+    # 2. Invite Tracking
     inviter = None
-    
-    # Check kis invite link se user ne join kiya
     try:
         current_invites = await guild.invites()
         old_invites = invites_cache.get(guild.id, {})
@@ -159,9 +204,8 @@ async def on_member_join(member):
 
         invites_cache[guild.id] = {invite.code: invite.uses for invite in current_invites}
     except Exception as e:
-        print(f"Error checking invites: {e}")
+        print(f"[ERROR] Invites check failed: {e}")
 
-    # Fallback to your ID agar unknown/vanity URL ho
     if inviter and not inviter.bot:
         inviter_id = inviter.id
         inviter_display = inviter.mention
@@ -169,12 +213,11 @@ async def on_member_join(member):
         inviter_id = MY_USER_ID
         inviter_display = f"<@{MY_USER_ID}>"
 
-    # Total invites track karein
     member_invited_by[member.id] = inviter_id
     user_invites[inviter_id] = user_invites.get(inviter_id, 0) + 1
     total_invites = user_invites[inviter_id]
 
-    # 1. Professional Welcome Embed in Welcome Channel
+    # 3. Welcome Channel Embed
     welcome_channel = guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
         guild_icon = guild.icon.url if guild.icon else None
@@ -205,9 +248,9 @@ async def on_member_join(member):
         try:
             await welcome_channel.send(content=f"Welcome {member.mention}!", embed=embed)
         except Exception as e:
-            print(f"Error sending welcome embed: {e}")
+            print(f"[ERROR] Failed to send welcome embed: {e}")
 
-    # 2. Member ko Professional Direct Message (DM)
+    # 4. DM to Member
     try:
         dm_embed = discord.Embed(
             title="WELCOME TO PX PANEL COMMUNITY",
@@ -228,10 +271,10 @@ async def on_member_join(member):
         dm_embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
         await member.send(embed=dm_embed)
     except Exception as e:
-        print(f"DM couldn't be sent to {member.name}: {e}")
+        print(f"[DM Skipped] Could not send DM: {e}")
 
 
-# --- 6. Member Leave Event (Leave Message + Minus Invite) ---
+# --- 6. Member Leave Event ---
 @bot.event
 async def on_member_remove(member):
     guild = member.guild
@@ -260,7 +303,7 @@ async def on_member_remove(member):
             print(f"Error sending leave message: {e}")
 
 
-# --- 7. Real-Time Giveaway Participant Tracking (DM to You) ---
+# --- 7. Giveaway Reaction Tracking ---
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.message_id in active_giveaways and str(payload.emoji) == "🎉":
@@ -295,7 +338,67 @@ async def on_raw_reaction_add(payload):
 
 # --- 8. Slash Commands ---
 
-# 1. Zynrax Style Giveaway Command
+# 1. Sabhi Members ke Name ke aage PX lagane wala Command
+@bot.tree.command(name="setpx", description="Server ke sabhi members jinke naam ke aage PX nahi hai, PX tag lagayein")
+async def setpx(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("Yeh command sirf Administrator use kar sakte hain!", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+    guild = interaction.guild
+    changed_count = 0
+    skipped_count = 0
+
+    status_msg = await interaction.followup.send("🔄 **Processing:** Members ke nicknames scan ho rahe hain, kripya wait karein...")
+
+    for member in guild.members:
+        if member.bot:
+            continue
+        
+        # Server owner ka nick bot change nahi kar sakta
+        if member.id == guild.owner_id:
+            skipped_count += 1
+            continue
+
+        # Check agar bot ka role member se bada hai ya nahi
+        if guild.me.top_role <= member.top_role:
+            skipped_count += 1
+            continue
+
+        current_name = member.display_name
+        # Agar pehle se PX ya px nahi laga
+        if not current_name.upper().startswith("PX"):
+            new_nick = f"PX | {current_name}"[:32]
+            try:
+                await member.edit(nick=new_nick, reason="Bulk PX tag applied by Admin")
+                changed_count += 1
+                await asyncio.sleep(0.5)  # Discord rate limit prevention
+            except Exception:
+                skipped_count += 1
+
+    await status_msg.edit(
+        content=(
+            f"✅ **Task Completed!**\n\n"
+            f"• **Updated Members:** `{changed_count}` logo ke aage `PX | ` lag chuka hai.\n"
+            f"• **Skipped/Already had PX:** `{skipped_count}` members (Owner/Higher Roles/Already PX)."
+        )
+    )
+
+
+# 2. Sync Permissions
+@bot.tree.command(name="syncperms", description="Server ke sabhi VC aur Categories me bot permissions sync karein")
+async def syncperms(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("Sirf Administrator use kar sakte hain!", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    await auto_apply_bot_permissions(interaction.guild)
+    await interaction.followup.send("✅ **Done!** Permissions successfully sync ho gaye.", ephemeral=True)
+
+
+# 3. Giveaway Command
 @bot.tree.command(name="giveaway", description="Start a new giveaway")
 @app_commands.describe(
     prize="Giveaway prize (e.g., 1 MONTH NITRO ID)",
@@ -391,7 +494,7 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         print(f"Summary DM error: {e}")
 
 
-# 2. Check Invites Command
+# 4. Check Invites
 @bot.tree.command(name="invites", description="Apne ya kisi member ke total invites check karein")
 @app_commands.describe(member="Member jiske invites dekhne hain (optional)")
 async def invites(interaction: discord.Interaction, member: discord.Member = None):
@@ -400,15 +503,15 @@ async def invites(interaction: discord.Interaction, member: discord.Member = Non
     await interaction.response.send_message(f"📊 {target.mention} ke paas abhi total **{count}** active invites hain.")
 
 
-# 3. Clear Chat Command
+# 5. Clear Chat Command
 @bot.tree.command(name="clear", description="Chat messages delete karein")
 @app_commands.describe(amount="Kitne messages delete karne hain")
 async def clear(interaction: discord.Interaction, amount: int):
     if not interaction.user.guild_permissions.manage_messages:
-        await interaction.response.send_message("Aapke paas messages delete karne ki permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("Permission denied!", ephemeral=True)
         return
     if amount < 1:
-        await interaction.response.send_message("Kam se kam 1 message specify karein.", ephemeral=True)
+        await interaction.response.send_message("Kam se kam 1 message select karein.", ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
@@ -416,7 +519,7 @@ async def clear(interaction: discord.Interaction, amount: int):
     await interaction.followup.send(f"🧹 `{len(deleted)}` messages delete kar diye gaye!", ephemeral=True)
 
 
-# 4. Kick Command
+# 6. Kick Command
 @bot.tree.command(name="kick", description="User ko kick karein")
 @app_commands.describe(member="Member jise kick karna hai", reason="Reason")
 async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "Koi reason nahi diya gaya"):
@@ -427,7 +530,7 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     await interaction.response.send_message(f"👢 {member.mention} ko kick kar diya gaya. Reason: `{reason}`")
 
 
-# 5. Ban Command
+# 7. Ban Command
 @bot.tree.command(name="ban", description="User ko permanently ban karein")
 @app_commands.describe(member="Member jise ban karna hai", reason="Reason")
 async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "Koi reason nahi diya gaya"):
@@ -438,7 +541,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
     await interaction.response.send_message(f"🔨 {member.mention} ko ban kar diya gaya. Reason: `{reason}`")
 
 
-# 6. Timeout Command
+# 8. Timeout Command
 @bot.tree.command(name="timeout", description="User ko timeout/mute karein")
 @app_commands.describe(member="Member", minutes="Minutes", reason="Reason")
 async def timeout(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Rule violation"):
@@ -450,7 +553,7 @@ async def timeout(interaction: discord.Interaction, member: discord.Member, minu
     await interaction.response.send_message(f"⏳ {member.mention} ko `{minutes}` minute ke liye timeout kar diya gaya.")
 
 
-# 7. Ping Command
+# 9. Ping Command
 @bot.tree.command(name="ping", description="Bot latency check karein")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
