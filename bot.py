@@ -13,7 +13,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "Bot is online and running 24/7!"
+    return "PX Security Bot is online and running 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -41,13 +41,13 @@ bot = SecurityBot()
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = [MY_USER_ID]
 
-# Anti-Nuke Settings (5 second me 2 se zyada actions par direct ban)
+# Anti-Nuke Settings (5 second me 2 se zyada deletions par direct ban)
 channel_deletions = {}
 role_deletions = {}
 THRESHOLD = 2          
 WINDOW_SECONDS = 5
 
-# Active giveaways track karne ke liye
+# Active giveaways tracker
 active_giveaways = {}
 
 async def take_anti_nuke_action(guild, executor, action_name):
@@ -60,12 +60,13 @@ async def take_anti_nuke_action(guild, executor, action_name):
         owner = guild.owner
         if owner:
             await owner.send(
-                f"🚨 **ANTI-NUKE ALERT**\n"
-                f"User: `{executor.name}` (ID: `{executor.id}`)\n"
-                f"Action: Mass {action_name} detect hone par server se **Permanently Ban** kar diya gaya hai."
+                f"🚨 **ANTI-NUKE ALERT**\n\n"
+                f"• **Target User:** `{executor.name}` (ID: `{executor.id}`)\n"
+                f"• **Trigger:** Mass {action_name} detected within 5 seconds.\n"
+                f"• **Action Taken:** Permanently banned from the server."
             )
     except Exception as e:
-        print(f"Ban action failed: {e}")
+        print(f"Anti-nuke ban error: {e}")
 
 
 # --- 3. Anti-Nuke Listeners ---
@@ -100,7 +101,7 @@ async def on_guild_role_delete(role):
             await take_anti_nuke_action(guild, executor, "Role Deletions")
 
 
-# --- 4. Real-Time Giveaway Participant Tracking (Direct DM to You) ---
+# --- 4. Real-Time Giveaway Participant Tracking (DM to You) ---
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.message_id in active_giveaways and str(payload.emoji) == "🎉":
@@ -121,27 +122,27 @@ async def on_raw_reaction_add(payload):
             users = [u async for u in reaction.users() if not u.bot]
             total_count = len(users)
 
-            # Aapko DM bhejna
+            # Direct DM to your ID
             my_user = await bot.fetch_user(MY_USER_ID)
             joined_user = guild.get_member(payload.user_id) or await bot.fetch_user(payload.user_id)
             await my_user.send(
-                f"📥 **PX PANEL Giveaway - New Entry!**\n"
-                f"🎁 **Prize:** `{prize}`\n"
-                f"👤 **Participant:** `{joined_user.name}` (ID: `{joined_user.id}`)\n"
-                f"📊 **Total Entries:** `{total_count}`"
+                f"📥 **PX PANEL Giveaway Update**\n\n"
+                f"• **Prize:** `{prize}`\n"
+                f"• **New Entry:** `{joined_user.name}` (`{joined_user.id}`)\n"
+                f"• **Total Entries:** `{total_count}`"
             )
         except Exception as e:
-            print(f"Tracking error: {e}")
+            print(f"Tracking reaction error: {e}")
 
 
 # --- 5. Slash Commands ---
 
 # 1. Professional Giveaway Command
-@bot.tree.command(name="giveaway", description="PX PANEL official giveaway start karein")
+@bot.tree.command(name="giveaway", description="PX PANEL official giveaway host karein")
 @app_commands.describe(
-    prize="Giveaway prize (e.g., 1 MONTH NITRO ID)",
-    duration_minutes="Kitne minutes chalega (e.g., 60)",
-    winners="Kitne winners honge (default: 1)"
+    prize="Giveaway prize (e.g., 7 DAYS VAULT PANEL)",
+    duration_minutes="Duration in minutes (e.g., 1440 for 24 hours)",
+    winners="Number of winners (default: 1)"
 )
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
     if not interaction.user.guild_permissions.manage_guild:
@@ -152,38 +153,37 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     unix_timestamp = int(end_time.timestamp())
     guild_icon = interaction.guild.icon.url if interaction.guild.icon else None
 
-    # Custom Branded Embed
+    # Sleek & Clean Modern Embed
     embed = discord.Embed(
-        title=f"🎁 {prize.upper()} 🎁",
+        title=f"🎉  {prize.upper()}",
         description=(
-            f"**PX PANEL Server ki taraf se yeh giveaway organise kiya gaya hai.**\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👑 **Winners:** `{winners}`\n"
-            f"⏳ **Ends In:** <t:{unix_timestamp}:R> (<t:{unix_timestamp}:f>)\n"
-            f"🛡️ **Hosted & Sponsored by:** **Persistx**\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"👉 **Participate karne ke liye niche 🎉 react karein!**\n\n"
-            f"⏳ **Time Remaining:** <t:{unix_timestamp}:R>"
+            f"> An official event brought to you by **PX PANEL**.\n"
+            f"> Sponsored & Hosted by **Persistx**.\n\n"
+            f"**Details**\n"
+            f"• **Prize:** `{prize}`\n"
+            f"• **Winners:** `{winners}`\n"
+            f"• **Ending:** <t:{unix_timestamp}:R> (<t:{unix_timestamp}:f>)\n\n"
+            f"**How to Enter**\n"
+            f"Click the 🎉 reaction below to participate!"
         ),
-        color=discord.Color.gold()
+        color=0xFEE75C
     )
-    embed.set_author(name="PX PANEL • OFFICIAL GIVEAWAY", icon_url=guild_icon)
-    embed.set_footer(text="PX PANEL Community • PX FAMILY💖")
+    embed.set_author(name="PX PANEL • EXCLUSIVE GIVEAWAY", icon_url=guild_icon)
+    embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
     embed.timestamp = end_time
 
-    # Send with @everyone & @here
+    # Send Clean Alert
     await interaction.response.send_message(
-        content="@everyone @here 🎉 **New Giveaway Alert!**",
+        content="@everyone @here",
         embed=embed,
         allowed_mentions=discord.AllowedMentions(everyone=True)
     )
     msg = await interaction.original_response()
     await msg.add_reaction("🎉")
 
-    # Track giveaway message
     active_giveaways[msg.id] = {"prize": prize}
 
-    # Timer wait
+    # Wait duration
     await asyncio.sleep(duration_minutes * 60)
 
     try:
@@ -197,69 +197,73 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
 
     active_giveaways.pop(msg.id, None)
 
-    # Embed mark as Concluded
-    embed.title = f"🎁 {prize.upper()} (CONCLUDED) 🎁"
+    # Concluded State Embed
+    embed.title = f"🔒  {prize.upper()} (ENDED)"
     embed.description = (
-        f"**Giveaway ab officially samapt ho chuka hai!**\n\n"
-        f"👑 **Total Winners:** `{winners}`\n"
-        f"⏳ **Ended:** <t:{unix_timestamp}:R>\n"
-        f"🛡️ **Hosted & Sponsored by:** **Persistx**"
+        f"> The giveaway has officially concluded.\n"
+        f"> Sponsored & Hosted by **Persistx**.\n\n"
+        f"**Details**\n"
+        f"• **Prize:** `{prize}`\n"
+        f"• **Winners:** `{winners}`\n"
+        f"• **Ended:** <t:{unix_timestamp}:R>"
     )
-    embed.color = discord.Color.dark_gray()
-    embed.set_footer(text="PX PANEL Community • PX FAMILY💖")
+    embed.color = 0x2B2D31
     await updated_msg.edit(embed=embed)
 
     if not users:
-        await interaction.channel.send(f"⚠️ Giveaway ended for **{prize}**! Koi valid participant nahi mila.")
+        no_winner_embed = discord.Embed(
+            description=f"⚠️ **Giveaway Ended:** No valid participants entered for **{prize}**.",
+            color=0xED4245
+        )
+        await interaction.channel.send(embed=no_winner_embed)
         return
 
-    # Random Winner Selection
     actual_winners_count = min(len(users), winners)
     selected_winners = random.sample(users, actual_winners_count)
     winners_mention = ", ".join([w.mention for w in selected_winners])
 
-    # Winner Announcement Embed
     end_embed = discord.Embed(
-        title="🏆 GIVEAWAY WINNER ANNOUNCED! 🏆",
+        title="🎊  GIVEAWAY CONCLUDED",
         description=(
             f"Congratulations {winners_mention}!\n\n"
-            f"Aapne **{prize}** jeet liya hai jo **PX PANEL** ki taraf se sponsor kiya gaya tha by **Persistx**! 🥳\n\n"
-            f"Prize claim karne ke liye host ya ticket open karein."
+            f"You have won **{prize}** courtesy of **PX PANEL**!\n"
+            f"Hosted by **Persistx**.\n\n"
+            f"> *Please open a ticket or contact host to claim your reward.*"
         ),
-        color=discord.Color.green()
+        color=0x57F287
     )
     end_embed.set_author(name="PX PANEL • RESULTS", icon_url=guild_icon)
-    end_embed.set_footer(text="PX PANEL Community • PX FAMILY💖")
+    end_embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
     
-    await interaction.channel.send(content=f"🎉 Badhai ho {winners_mention}!", embed=end_embed)
+    await interaction.channel.send(content=f"Congratulations {winners_mention}!", embed=end_embed)
 
-    # Detailed Final Report to Owner's DM
+    # Final Summary DM to Owner
     try:
         my_user = await bot.fetch_user(MY_USER_ID)
-        participants_names = "\n".join([f"- {u.name} (`{u.id}`)" for u in users])
+        participants_names = "\n".join([f"• {u.name} (`{u.id}`)" for u in users])
         if len(participants_names) > 1500:
-            participants_names = participants_names[:1500] + "\n...aur bhi participants hain"
+            participants_names = participants_names[:1500] + "\n...and more"
 
         await my_user.send(
-            f"📊 **PX PANEL Giveaway Report: {prize}**\n"
-            f"• **Sponsored by:** Persistx\n"
-            f"• **Total Participants:** `{len(users)}`\n"
-            f"• **Winner(s):** {winners_mention}\n\n"
-            f"📋 **Participant List:**\n{participants_names}"
+            f"📊 **Giveaway Completed: {prize}**\n\n"
+            f"• **Host:** Persistx\n"
+            f"• **Total Entries:** `{len(users)}`\n"
+            f"• **Winners:** {winners_mention}\n\n"
+            f"**Participants:**\n{participants_names}"
         )
     except Exception as e:
         print(f"Summary DM error: {e}")
 
 
 # 2. Clear Chat Command
-@bot.tree.command(name="clear", description="Chat messages delete karein")
+@bot.tree.command(name="clear", description="Chat messages purge karein")
 @app_commands.describe(amount="Kitne messages delete karne hain")
 async def clear(interaction: discord.Interaction, amount: int):
     if not interaction.user.guild_permissions.manage_messages:
-        await interaction.response.send_message("Aapke paas permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("Aapke paas messages delete karne ki permission nahi hai!", ephemeral=True)
         return
     if amount < 1:
-        await interaction.response.send_message("Kam se kam 1 message select karein.", ephemeral=True)
+        await interaction.response.send_message("Kam se kam 1 message specify karein.", ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
@@ -268,37 +272,37 @@ async def clear(interaction: discord.Interaction, amount: int):
 
 
 # 3. Kick Command
-@bot.tree.command(name="kick", description="User ko kick karein")
-@app_commands.describe(member="Member jise kick karna hai", reason="Reason")
-async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "Koi reason nahi diya gaya"):
+@bot.tree.command(name="kick", description="User ko server se kick karein")
+@app_commands.describe(member="User to kick", reason="Reason for kick")
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not interaction.user.guild_permissions.kick_members:
-        await interaction.response.send_message("Aapke paas permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("Permission denied!", ephemeral=True)
         return
     await member.kick(reason=reason)
-    await interaction.response.send_message(f"👢 {member.mention} ko kick kar diya gaya. Reason: {reason}")
+    await interaction.response.send_message(f"👢 {member.mention} has been kicked. Reason: `{reason}`")
 
 
 # 4. Ban Command
-@bot.tree.command(name="ban", description="User ko permanently ban karein")
-@app_commands.describe(member="Member jise ban karna hai", reason="Reason")
-async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "Koi reason nahi diya gaya"):
+@bot.tree.command(name="ban", description="User ko server se permanently ban karein")
+@app_commands.describe(member="User to ban", reason="Reason for ban")
+async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
     if not interaction.user.guild_permissions.ban_members:
-        await interaction.response.send_message("Aapke paas permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("Permission denied!", ephemeral=True)
         return
     await member.ban(reason=reason)
-    await interaction.response.send_message(f"🔨 {member.mention} ko ban kar diya gaya. Reason: {reason}")
+    await interaction.response.send_message(f"🔨 {member.mention} has been permanently banned. Reason: `{reason}`")
 
 
 # 5. Timeout Command
 @bot.tree.command(name="timeout", description="User ko timeout/mute karein")
-@app_commands.describe(member="Member", minutes="Kitne minute ke liye", reason="Reason")
+@app_commands.describe(member="User to mute", minutes="Duration in minutes", reason="Reason")
 async def timeout(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Rule violation"):
     if not interaction.user.guild_permissions.moderate_members:
-        await interaction.response.send_message("Aapke paas permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("Permission denied!", ephemeral=True)
         return
     duration = timedelta(minutes=minutes)
     await member.timeout(duration, reason=reason)
-    await interaction.response.send_message(f"⏳ {member.mention} ko {minutes} minute ke liye timeout par daal diya gaya.")
+    await interaction.response.send_message(f"⏳ {member.mention} has been timed out for `{minutes}` minutes.")
 
 
 # 6. Ping Command
@@ -313,7 +317,7 @@ async def on_ready():
     print("PX PANEL Security & Giveaway System is Online!")
 
 
-# --- 6. Start Execution ---
+# --- 6. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
