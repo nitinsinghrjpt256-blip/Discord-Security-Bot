@@ -13,7 +13,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Military Anti-Nuke & OwO System is online 24/7!"
+    return "PX Military Anti-Nuke, Ticket & OwO System is online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -37,24 +37,33 @@ class SecurityBot(commands.Bot):
         super().__init__(command_prefix=["!", "owo ", "OwO ", "OWO "], intents=intents)
 
     async def setup_hook(self):
+        # Register persistent ticket views on reboot
+        self.add_view(TicketSelectView())
+        self.add_view(TicketCloseView())
         await self.tree.sync()
-        print("[INIT] Slash Commands synced successfully!", flush=True)
+        print("[INIT] Slash Commands & Ticket Views synced!", flush=True)
 
 bot = SecurityBot()
 
-# --- Server & Identity Configuration ---
-MY_SERVER_ID = 1525181999147388958             # Sirf issi server me bot chalega
+# --- Server & System Configuration ---
+MY_SERVER_ID = 1525181999147388958             # Official Server Lock
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = []
 
+# Channels
 WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
 INVITE_LOG_CHANNEL_ID = 1548745613640859729    # PX INVITER BOT
 LEAVE_CHANNEL_ID = 1548745646717014029         # PX LEAVE BOT
 OWO_CHANNEL_ID = 1548770349351575632           # PX OWO BOT
-
 CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
 
+# Ticket Setup Configuration
+TICKET_PANEL_CHANNEL_ID = 1525182000825237653  # Yahan ticket panel aayega
+TICKET_CATEGORY_ID = 1525181999646507118       # Tickets is category me open honge
+QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png" # Image 6 wala QR code (Aap direct Discord attachment link bhi daal sakte hain)
+
+ticket_counter = 207  # Start from ticket #207
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
 # Caches
@@ -63,7 +72,7 @@ user_invites = {}
 member_invited_by = {}      
 active_giveaways = {}
 
-# OwO Economy Memory
+# OwO Economy
 user_balances = {}          
 daily_cooldowns = {}        
 channel_webhooks = {}       
@@ -97,7 +106,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
     try:
         dangerous_roles = [r for r in executor.roles if r.name != "@everyone" and r < guild.me.top_role]
         if dangerous_roles:
-            await executor.remove_roles(*dangerous_roles, reason=f"Anti-Nuke Triggered: {action}")
+            await executor.remove_roles(*dangerous_roles, reason=f"Anti-Nuke: {action}")
     except Exception as e:
         print(f"[ROLE STRIP ERROR]: {e}", flush=True)
 
@@ -114,8 +123,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
                 f"🚨 **HIGH SECURITY ANTI-NUKE ALERT** 🚨\n\n"
                 f"• **Offender:** `{executor.name}` (`{executor.id}`)\n"
                 f"• **Action Detected:** `{action}`\n"
-                f"• **Status:** Roles Stripped & Ban Applied Immediately.\n"
-                f"• **Time:** <t:{int(datetime.utcnow().timestamp())}:F>"
+                f"• **Status:** Roles Stripped & Ban Applied Immediately."
             )
     except Exception:
         pass
@@ -149,12 +157,129 @@ async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, c
         return await channel.send(content=content, embed=embed, view=view)
 
 
-# --- 3. SERVER AUTHORIZATION & AUTO-LEAVE SYSTEM ---
+# --- 3. AESTHETIC TICKET SYSTEM COMPONENTS ---
+
+class TicketCloseView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Close Ticket 🔒", style=discord.ButtonStyle.danger, custom_id="px_ticket_close_btn")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("⏳ **Closing Ticket...** Channel 3 seconds me delete ho jayega.")
+        await asyncio.sleep(3)
+        try:
+            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user.name}")
+        except Exception as e:
+            print(f"Error deleting ticket channel: {e}")
+
+
+class TicketSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="AIMKILL EXE / APK", description="High performance aimkill panel", emoji="🔘"),
+            discord.SelectOption(label="BRUTAL", description="Aggressive headshot aimbot", emoji="🔘"),
+            discord.SelectOption(label="SILENT AIM / MAX", description="Undetected silent aim config", emoji="🔘"),
+            discord.SelectOption(label="PREMIUM PANEL", description="Full premium access features", emoji="🔘"),
+            discord.SelectOption(label="UID BYPASS", description="Anti-ban UID bypass security", emoji="🔘"),
+            discord.SelectOption(label="LIB BYPASS", description="Advanced lib memory bypass", emoji="🔘"),
+            discord.SelectOption(label="VAULT PANEL", description="Unlock all vault & bundles", emoji="🔘"),
+            discord.SelectOption(label="EMOTE PANEL", description="All rare emotes unlocker", emoji="🔘"),
+            discord.SelectOption(label="COVER SILENT APK / EXE", description="Stealth cover silent panel", emoji="🔘"),
+            discord.SelectOption(label="BASIC PANEL", description="Standard starter panel features", emoji="🔘"),
+            discord.SelectOption(label="INTERNAL PANEL", description="Direct memory internal injection", emoji="🔘"),
+            discord.SelectOption(label="AIMBOT VISIBLE", description="Visible crosshair tracker", emoji="🔘"),
+            discord.SelectOption(label="STREAMER PANEL", description="Hide overlays while streaming", emoji="🔘"),
+            discord.SelectOption(label="OTHER PANEL", description="Custom inquiry & special tools", emoji="🔘"),
+            discord.SelectOption(label="FF ID SELL / BUY", description="Verified Free Fire accounts market", emoji="🛒"),
+            discord.SelectOption(label="FREE PANEL", description="Free tester version panel", emoji="🆓"),
+            discord.SelectOption(label="CUSTOM PANEL", description="Custom build panel request", emoji="⚙️"),
+            discord.SelectOption(label="HELP SUPPORT", description="Talk directly to Super Admin PERSISTX", emoji="🆘")
+        ]
+        super().__init__(
+            placeholder="Which Panel Do You Need ? 🛍️",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="px_ticket_select_menu"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        global ticket_counter
+        guild = interaction.guild
+        user = interaction.user
+        selected_panel = self.values[0]
+
+        # Check category
+        category = guild.get_channel(TICKET_CATEGORY_ID)
+        if not category or not isinstance(category, discord.CategoryChannel):
+            await interaction.response.send_message("❌ Ticket category nahi mili! Check `TICKET_CATEGORY_ID`.", ephemeral=True)
+            return
+
+        # Sanitize username for channel name
+        clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:10]
+        channel_name = f"ticket-{clean_name}-{ticket_counter}"
+        current_ticket_num = ticket_counter
+        ticket_counter += 1
+
+        # Channel permissions: Creator + Bot + Admins only
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, embed_links=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+        }
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            ticket_channel = await guild.create_text_channel(
+                name=channel_name,
+                category=category,
+                overwrites=overwrites,
+                topic=f"Ticket #{current_ticket_num} | User: {user.name} ({user.id}) | Panel: {selected_panel}"
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Ticket create nahi ho paya: {e}", ephemeral=True)
+            return
+
+        # Aesthetic Ticket Opening Card with QR Code
+        embed = discord.Embed(
+            title="✦  PX PANEL OFFICIAL STORE  ✦",
+            description=(
+                f"Hello {user.mention}, welcome to your support ticket!\n"
+                f"> **Ticket ID:** `#{current_ticket_num}`\n"
+                f"> **Selected Product:** `{selected_panel}`\n"
+                f"> **Status:** `Pending Admin Response`\n\n"
+                f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
+                f"  💳 **PAYMENT INFORMATION**\n"
+                f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
+                f"• **BINANCE PAY ID:** `1210948888`\n"
+                f"• **UPI / QR SCAN:** *Scan the QR code below to pay directly.*\n\n"
+                f"📌 *Payment complete karne ke baad screenshot isi channel me send karein.* Staff will reach out to you instantly!"
+            ),
+            color=0xED4245
+        )
+        embed.set_thumbnail(url=user.display_avatar.url)
+        # QR Code Image set
+        embed.set_image(url="https://media.discordapp.net/attachments/1525182000825237653/1000003181/px_qr.png?ex=66e8bb5a&is=66e769da&hm=sample" if "sample" in QR_IMAGE_URL else QR_IMAGE_URL)
+        embed.set_footer(text=f"PX STORE © 2026 • Powered by PERSISTX", icon_url=guild.icon.url if guild.icon else None)
+        embed.timestamp = datetime.utcnow()
+
+        close_view = TicketCloseView()
+        await ticket_channel.send(content=f"{user.mention} | <@{MY_USER_ID}>", embed=embed, view=close_view)
+        await interaction.followup.send(f"✅ Aapka ticket create ho gaya hai: {ticket_channel.mention}", ephemeral=True)
+
+
+class TicketSelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(TicketSelect())
+
+
+# --- 4. SERVER AUTHORIZATION & AUTO-LEAVE SYSTEM ---
 @bot.event
 async def on_guild_join(guild):
-    """Koi doosre server me bot add kare to auto-leave karega"""
     if guild.id != MY_SERVER_ID:
-        print(f"[UNAUTHORIZED SERVER DETECTED] Leaving guild: {guild.name} ({guild.id})", flush=True)
+        print(f"[UNAUTHORIZED SERVER] Auto-leaving: {guild.name}", flush=True)
         try:
             for channel in guild.text_channels:
                 if channel.permissions_for(guild.me).send_messages:
@@ -167,15 +292,13 @@ async def on_guild_join(guild):
 
 @bot.tree.interaction_check
 async def global_slash_check(interaction: discord.Interaction):
-    """Sabhi slash commands ke liye server lock"""
     if not interaction.guild or interaction.guild.id != MY_SERVER_ID:
         await interaction.response.send_message(ACCESS_DENIED_MSG, ephemeral=True)
         return False
     return True
 
 
-# --- 4. HIGH-LEVEL ANTI-NUKE LISTENERS ---
-
+# --- 5. ANTI-NUKE LISTENERS ---
 @bot.event
 async def on_guild_channel_delete(channel):
     if channel.guild.id != MY_SERVER_ID:
@@ -183,16 +306,10 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
+        # Agar admin ne ticket close kiya ho toh ban na kare
+        if "ticket-" in channel.name.lower():
+            return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
-
-        try:
-            category = channel.category
-            if isinstance(channel, discord.TextChannel):
-                await guild.create_text_channel(name=channel.name, category=category, position=channel.position, topic=channel.topic)
-            elif isinstance(channel, discord.VoiceChannel):
-                await guild.create_voice_channel(name=channel.name, category=category, position=channel.position)
-        except Exception as e:
-            print(f"[RECOVERY ERROR]: {e}", flush=True)
 
 @bot.event
 async def on_guild_role_delete(role):
@@ -202,11 +319,9 @@ async def on_guild_role_delete(role):
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.role_delete):
         executor = entry.user
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
-        try:
-            await guild.create_role(name=role.name, permissions=role.permissions, color=role.color, hoist=role.hoist, mentionable=role.mentionable)
-        except Exception as e:
-            print(f"[ROLE RECOVERY ERROR]: {e}", flush=True)
 
+
+# --- 6. Member Join/Leave Events ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
@@ -216,23 +331,22 @@ async def on_member_join(member):
     if member.bot:
         async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
             inviter = entry.user
-            await execute_antinuke_punishment(guild, inviter, f"Malicious Bot Added: {member.name}")
+            await execute_antinuke_punishment(guild, inviter, f"Bot Added: {member.name}")
             try:
-                await member.ban(reason="Anti-Nuke: Unauthorized Bot Insertion")
+                await member.ban(reason="Anti-Nuke: Unauthorized Bot")
             except Exception:
                 pass
             return
 
-    # Normal user join
+    # Nickname Tag
     if not member.bot and member.id != guild.owner_id:
         try:
-            if guild.me.top_role > member.top_role:
-                if not member.display_name.upper().startswith("PX"):
-                    new_nick = f"PX | {member.display_name}"[:32]
-                    await member.edit(nick=new_nick, reason="Auto PX tag on join")
+            if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
+                await member.edit(nick=f"PX | {member.display_name}"[:32], reason="Auto PX tag")
         except Exception:
             pass
 
+    # Invite calculation
     inviter = None
     try:
         current_invites = await guild.invites()
@@ -249,15 +363,9 @@ async def on_member_join(member):
     except Exception:
         pass
 
-    if inviter and not inviter.bot:
-        inviter_id = inviter.id
-        inviter_display = inviter.mention
-        inviter_name = inviter.name
-    else:
-        inviter_id = MY_USER_ID
-        inviter_display = f"<@{MY_USER_ID}>"
-        owner_member = guild.get_member(MY_USER_ID)
-        inviter_name = owner_member.name if owner_member else "PERSIST-X"
+    inviter_id = inviter.id if inviter and not inviter.bot else MY_USER_ID
+    inviter_name = inviter.name if inviter and not inviter.bot else "PERSIST-X"
+    inviter_display = f"<@{inviter_id}>"
 
     member_invited_by[member.id] = inviter_id
     user_invites[inviter_id] = user_invites.get(inviter_id, 0) + 1
@@ -278,8 +386,6 @@ async def on_member_join(member):
     welcome_channel = guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
         guild_icon = guild.icon.url if guild.icon else None
-        user_avatar = member.display_avatar.url
-
         embed = discord.Embed(
             title="✦  WELCOME TO PX PANEL  ✦",
             description=(
@@ -298,72 +404,35 @@ async def on_member_join(member):
             color=0xFEE75C
         )
         embed.set_author(name="New Member Joined!", icon_url=guild_icon)
-        embed.set_thumbnail(url=user_avatar)
+        embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
         embed.timestamp = datetime.utcnow()
-
         await send_custom_channel_msg(welcome_channel, "PX WELCOMER BOT", content=f"Welcome {member.mention}!", embed=embed)
 
-    try:
-        guild_icon = guild.icon.url if guild.icon else None
-        dm_embed = discord.Embed(
-            title="WELCOME TO PX PANEL COMMUNITY",
-            description=(
-                f"Hello **{member.name}**, welcome to **PX PANEL**! 🌟\n\n"
-                f"> We are thrilled to have you here. Explore our community, play OwO mini-games, and participate in giveaways!\n\n"
-                f"📌 **Quick Guidance:**\n"
-                f"• 📜 Server Rules: <#{RULE_CHANNEL_ID}>\n"
-                f"• 💬 General Chat: <#{CHAT_CHANNEL_ID}>\n"
-                f"• 🎮 OwO Games: <#{OWO_CHANNEL_ID}>\n\n"
-                f"*Hosted & Powered by Persistx*"
-            ),
-            color=0xFEE75C
+
+@bot.event
+async def on_member_remove(member):
+    if member.guild.id != MY_SERVER_ID:
+        return
+    guild = member.guild
+    leave_channel = guild.get_channel(LEAVE_CHANNEL_ID)
+    inviter_id = member_invited_by.pop(member.id, None) or MY_USER_ID
+    if inviter_id in user_invites and user_invites[inviter_id] > 0:
+        user_invites[inviter_id] -= 1
+
+    if leave_channel:
+        leave_text = (
+            f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
+            f"  ✧ 𝐆𝐨𝐨𝐝𝐛𝐲𝐞 {member.name} ✧\n"
+            f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n\n"
+            f"> 🚪 **Member Left:** `{member.name}`\n"
+            f"> 🔗 **Invited By:** <@{inviter_id}>\n\n"
+            f"*We hope to see you again!* 🥀"
         )
-        dm_embed.set_author(name="PX PANEL • OFFICIAL SERVER", icon_url=guild_icon)
-        dm_embed.set_thumbnail(url=member.display_avatar.url)
-        dm_embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
-        await member.send(embed=dm_embed)
-    except Exception:
-        pass
-
-@bot.event
-async def on_member_ban(guild, user):
-    if guild.id != MY_SERVER_ID:
-        return
-    async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.ban):
-        executor = entry.user
-        if executor.id != bot.user.id:
-            await execute_antinuke_punishment(guild, executor, f"Unauthorized Ban of {user.name}")
-
-@bot.event
-async def on_guild_update(before, after):
-    if after.id != MY_SERVER_ID:
-        return
-    async for entry in after.audit_logs(limit=1, action=discord.AuditLogAction.guild_update):
-        executor = entry.user
-        if executor.id != bot.user.id:
-            await execute_antinuke_punishment(after, executor, "Unauthorized Server Modification")
-            try:
-                await after.edit(name=before.name, reason="Anti-Nuke: Restoring Server Identity")
-            except Exception:
-                pass
-
-@bot.event
-async def on_webhooks_update(channel):
-    if channel.guild.id != MY_SERVER_ID:
-        return
-    guild = channel.guild
-    async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.webhook_create):
-        executor = entry.user
-        if executor.id != bot.user.id and entry.target.name != "PX-Identity-Hook":
-            await execute_antinuke_punishment(guild, executor, "Unauthorized Webhook Creation")
-            try:
-                await entry.target.delete(reason="Anti-Nuke: Unauthorized Webhook")
-            except Exception:
-                pass
+        await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 5. Interactive Mines Game View ---
+# --- 7. Interactive Mines Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -456,11 +525,7 @@ class MinesGameView(discord.ui.View):
         return button_callback
 
     async def cashout_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user.id:
-            await interaction.response.send_message("❌ Yeh aapka game nahi hai!", ephemeral=True)
-            return
-
-        if self.game_over or self.revealed_gems == 0:
+        if interaction.user.id != self.user.id or self.game_over or self.revealed_gems == 0:
             await interaction.response.defer()
             return
 
@@ -487,7 +552,7 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 6. Ready Event ---
+# --- 8. Ready Event ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -497,7 +562,6 @@ async def on_ready():
 
     for guild in list(bot.guilds):
         if guild.id != MY_SERVER_ID:
-            print(f"[AUTO-LEAVE] Unknown guild: {guild.name} ({guild.id})", flush=True)
             await guild.leave()
         else:
             try:
@@ -507,34 +571,7 @@ async def on_ready():
                 pass
 
 
-@bot.event
-async def on_member_remove(member):
-    if member.guild.id != MY_SERVER_ID:
-        return
-    guild = member.guild
-    leave_channel = guild.get_channel(LEAVE_CHANNEL_ID)
-
-    inviter_id = member_invited_by.pop(member.id, None)
-    if inviter_id:
-        if inviter_id in user_invites and user_invites[inviter_id] > 0:
-            user_invites[inviter_id] -= 1
-        inviter_mention = f"<@{inviter_id}>"
-    else:
-        inviter_mention = f"<@{MY_USER_ID}>"
-
-    if leave_channel:
-        leave_text = (
-            f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-            f"  ✧ 𝐆𝐨𝐨𝐝𝐛𝐲𝐞 {member.name} ✧\n"
-            f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n\n"
-            f"> 🚪 **Member Left:** `{member.name}`\n"
-            f"> 🔗 **Invited By:** {inviter_mention}\n\n"
-            f"*We hope to see you again!* 🥀"
-        )
-        await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
-
-
-# --- 7. OwO Mini-Games (Server Lock Protected) ---
+# --- 9. OwO Games Listener ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -544,11 +581,9 @@ async def on_message(message):
     lowered = content.lower()
 
     if lowered.startswith("owo") or lowered.startswith("px owo"):
-        # Other servers get instant error
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
             return
-
         if message.channel.id != OWO_CHANNEL_ID:
             return
 
@@ -586,14 +621,12 @@ async def on_message(message):
             try:
                 bet = int(parts[2])
             except ValueError:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Valid amount dalein!")
                 return
             if bet <= 0:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Bet amount 0 se zyada hona chahiye!")
                 return
             bal = get_user_balance(message.author.id)
             if message.author.id != MY_USER_ID and bet > bal:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient balance! (Aapke paas: `{bal:,}`)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient balance!")
                 return
 
             view = MinesGameView(message.author, bet)
@@ -614,7 +647,6 @@ async def on_message(message):
                 return
             bal = get_user_balance(message.author.id)
             if message.author.id != MY_USER_ID and bet > bal:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient coins!")
                 return
             choice = parts[3].lower()[0] if len(parts) >= 4 else "h"
             choice_str = "Heads" if choice == "h" else "Tails"
@@ -682,7 +714,44 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 8. Slash Commands Suite ---
+# --- 10. SLASH COMMANDS (INCLUDING TICKET PANEL SETUP) ---
+
+# Command to send the Aesthetic Ticket Selection Embed in Channel 1525182000825237653
+@bot.tree.command(name="sendticketpanel", description="Setup aesthetic ticket panel in ticket creation channel")
+async def sendticketpanel(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
+        return
+
+    channel = interaction.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
+    if not channel:
+        await interaction.response.send_message(f"❌ Ticket Channel ID {TICKET_PANEL_CHANNEL_ID} nahi mila!", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="✦  PERSISTX • OFFICIAL TICKET SUPPORT  ✦",
+        description=(
+            "• **Please choose the product to create a ticket. 🛒**\n"
+            "• **Our staff will reach out to you after the ticket is created. 📖**\n"
+            "• **Please do not create tickets for fun. 🚫**\n"
+            "• **Happy Buying! 💖**\n\n"
+            "```yaml\n"
+            "BINANCE ID : 1210948888\n"
+            "NAME       : PERSISTX_OFFICIAL\n"
+            "STATUS     : INSTANT DELIVERY\n"
+            "```\n"
+            "*Select the required panel from the dropdown menu below to proceed!* 👇"
+        ),
+        color=0xED4245
+    )
+    embed.set_author(name="PX TICKET KING • OFFICIAL", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+    embed.set_footer(text="CREATE TICKET PERSISTX © 2026", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+
+    view = TicketSelectView()
+    await channel.send(embed=embed, view=view)
+    await interaction.response.send_message(f"✅ Ticket panel successfully sent to {channel.mention}!", ephemeral=True)
+
+
 class OwOGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="owo", description="OwO Mini-Game & Economy Commands")
@@ -756,7 +825,7 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
 
 
-# --- 9. Execution Start ---
+# --- 11. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
