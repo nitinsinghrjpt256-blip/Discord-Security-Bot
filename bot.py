@@ -37,7 +37,6 @@ class SecurityBot(commands.Bot):
         super().__init__(command_prefix=["!", "owo ", "OwO ", "OWO "], intents=intents)
 
     async def setup_hook(self):
-        # Register persistent ticket views on reboot
         self.add_view(TicketSelectView())
         self.add_view(TicketCloseView())
         await self.tree.sync()
@@ -59,11 +58,11 @@ CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
 
 # Ticket Setup Configuration
-TICKET_PANEL_CHANNEL_ID = 1525182000825237653  # Yahan ticket panel aayega
-TICKET_CATEGORY_ID = 1525181999646507118       # Tickets is category me open honge
-QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png" # Image 6 wala QR code (Aap direct Discord attachment link bhi daal sakte hain)
+TICKET_PANEL_CHANNEL_ID = 1525182000825237653  # Ticket creation channel
+TICKET_CATEGORY_ID = 1525181999646507118       # Ticket category ID
+QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png" 
 
-ticket_counter = 207  # Start from ticket #207
+ticket_counter = 207  # Starting at 207
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
 # Caches
@@ -175,31 +174,33 @@ class TicketCloseView(discord.ui.View):
 
 class TicketSelect(discord.ui.Select):
     def __init__(self):
+        # Specially curated for PC Panels and Android Injectors
         options = [
-            discord.SelectOption(label="AIMKILL EXE / APK", description="High performance aimkill panel", emoji="🔘"),
-            discord.SelectOption(label="BRUTAL", description="Aggressive headshot aimbot", emoji="🔘"),
-            discord.SelectOption(label="SILENT AIM / MAX", description="Undetected silent aim config", emoji="🔘"),
-            discord.SelectOption(label="PREMIUM PANEL", description="Full premium access features", emoji="🔘"),
-            discord.SelectOption(label="UID BYPASS", description="Anti-ban UID bypass security", emoji="🔘"),
-            discord.SelectOption(label="LIB BYPASS", description="Advanced lib memory bypass", emoji="🔘"),
-            discord.SelectOption(label="VAULT PANEL", description="Unlock all vault & bundles", emoji="🔘"),
-            discord.SelectOption(label="EMOTE PANEL", description="All rare emotes unlocker", emoji="🔘"),
-            discord.SelectOption(label="COVER SILENT APK / EXE", description="Stealth cover silent panel", emoji="🔘"),
-            discord.SelectOption(label="BASIC PANEL", description="Standard starter panel features", emoji="🔘"),
-            discord.SelectOption(label="INTERNAL PANEL", description="Direct memory internal injection", emoji="🔘"),
-            discord.SelectOption(label="AIMBOT VISIBLE", description="Visible crosshair tracker", emoji="🔘"),
-            discord.SelectOption(label="STREAMER PANEL", description="Hide overlays while streaming", emoji="🔘"),
-            discord.SelectOption(label="OTHER PANEL", description="Custom inquiry & special tools", emoji="🔘"),
-            discord.SelectOption(label="FF ID SELL / BUY", description="Verified Free Fire accounts market", emoji="🛒"),
-            discord.SelectOption(label="FREE PANEL", description="Free tester version panel", emoji="🆓"),
-            discord.SelectOption(label="CUSTOM PANEL", description="Custom build panel request", emoji="⚙️"),
-            discord.SelectOption(label="HELP SUPPORT", description="Talk directly to Super Admin PERSISTX", emoji="🆘")
+            # PC Panels
+            discord.SelectOption(label="PC PANEL • FULL VIP (EXE)", description="Aimkill, Headshot, Silent Aim, ESP - PC", emoji="💻"),
+            discord.SelectOption(label="PC PANEL • STREAMER BYPASS", description="Stream-Proof undetected bypass for PC", emoji="🖥️"),
+            discord.SelectOption(label="PC PANEL • INTERNAL INJECTION", description="Ultra-smooth internal memory panel", emoji="⚡"),
+            
+            # Android Injectors
+            discord.SelectOption(label="ANDROID INJECTOR • ROOT / NON-ROOT", description="Auto Headshot, Aimlock, 32/64 Bit Android", emoji="📱"),
+            discord.SelectOption(label="ANDROID INJECTOR • LIB BYPASS VIP", description="100% Main ID Safe Lib Memory Injector", emoji="🛡️"),
+            discord.SelectOption(label="ANDROID INJECTOR • EMOTE & VAULT", description="Rare bundles & all emotes unlock injector", emoji="✨"),
+
+            # Free Panels & Keys
+            discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
+
+            # Business & Reseller
+            discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
+            discord.SelectOption(label="FF ID MARKET • BUY / SELL", description="Verified high-level Free Fire ID deals", emoji="🛒"),
+            discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
+
+            # Support
+            discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct support from Super Admin PERSISTX", emoji="🆘")
         ]
         super().__init__(
-            placeholder="Which Panel Do You Need ? 🛍️",
+            placeholder="Select PC Panel or Android Injector... 🛍️",
             min_values=1,
             max_values=1,
-            options=options,
             custom_id="px_ticket_select_menu"
         )
 
@@ -207,21 +208,18 @@ class TicketSelect(discord.ui.Select):
         global ticket_counter
         guild = interaction.guild
         user = interaction.user
-        selected_panel = self.values[0]
+        selected_product = self.values[0]
 
-        # Check category
         category = guild.get_channel(TICKET_CATEGORY_ID)
         if not category or not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check `TICKET_CATEGORY_ID`.", ephemeral=True)
             return
 
-        # Sanitize username for channel name
         clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:10]
         channel_name = f"ticket-{clean_name}-{ticket_counter}"
         current_ticket_num = ticket_counter
         ticket_counter += 1
 
-        # Channel permissions: Creator + Bot + Admins only
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, embed_links=True),
@@ -235,38 +233,39 @@ class TicketSelect(discord.ui.Select):
                 name=channel_name,
                 category=category,
                 overwrites=overwrites,
-                topic=f"Ticket #{current_ticket_num} | User: {user.name} ({user.id}) | Panel: {selected_panel}"
+                topic=f"Ticket #{current_ticket_num} | User: {user.name} ({user.id}) | Item: {selected_product}"
             )
         except Exception as e:
             await interaction.followup.send(f"❌ Ticket create nahi ho paya: {e}", ephemeral=True)
             return
 
-        # Aesthetic Ticket Opening Card with QR Code
         embed = discord.Embed(
-            title="✦  PX PANEL OFFICIAL STORE  ✦",
+            title="✦  PERSISTX • ORDER & SUPPORT TICKET  ✦",
             description=(
-                f"Hello {user.mention}, welcome to your support ticket!\n"
-                f"> **Ticket ID:** `#{current_ticket_num}`\n"
-                f"> **Selected Product:** `{selected_panel}`\n"
-                f"> **Status:** `Pending Admin Response`\n\n"
+                f"Hello {user.mention}, thank you for reaching out!\n"
+                f"> 🎫 **Ticket ID:** `#{current_ticket_num}`\n"
+                f"> 📦 **Selected Product:** `{selected_product}`\n"
+                f"> ⏱️ **Delivery Status:** `Instant Auto-Dispatch / Admin Verification`\n\n"
                 f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-                f"  💳 **PAYMENT INFORMATION**\n"
+                f"  💳 **PAYMENT & DETAILS**\n"
                 f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
-                f"• **BINANCE PAY ID:** `1210948888`\n"
-                f"• **UPI / QR SCAN:** *Scan the QR code below to pay directly.*\n\n"
-                f"📌 *Payment complete karne ke baad screenshot isi channel me send karein.* Staff will reach out to you instantly!"
+                f"• **BINANCE PAY ID:** `1210948888` (NAME: `PERSISTX`)\n"
+                f"• **UPI / QR SCAN:** *Scan the official QR code below.*\n\n"
+                f"📌 **Next Steps:**\n"
+                f"1. Agar aapne **Buy** karna hai to payment karke screenshot yahan bhejein.\n"
+                f"2. Agar **Free Panel Key** ya **Support** chahiye to apni inquiry yahan likhein.\n\n"
+                f"*Staff and <@{MY_USER_ID}> will assist you shortly!*"
             ),
             color=0xED4245
         )
         embed.set_thumbnail(url=user.display_avatar.url)
-        # QR Code Image set
-        embed.set_image(url="https://media.discordapp.net/attachments/1525182000825237653/1000003181/px_qr.png?ex=66e8bb5a&is=66e769da&hm=sample" if "sample" in QR_IMAGE_URL else QR_IMAGE_URL)
+        embed.set_image(url=QR_IMAGE_URL)
         embed.set_footer(text=f"PX STORE © 2026 • Powered by PERSISTX", icon_url=guild.icon.url if guild.icon else None)
         embed.timestamp = datetime.utcnow()
 
         close_view = TicketCloseView()
         await ticket_channel.send(content=f"{user.mention} | <@{MY_USER_ID}>", embed=embed, view=close_view)
-        await interaction.followup.send(f"✅ Aapka ticket create ho gaya hai: {ticket_channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"✅ Ticket create ho gaya: {ticket_channel.mention}", ephemeral=True)
 
 
 class TicketSelectView(discord.ui.View):
@@ -275,7 +274,28 @@ class TicketSelectView(discord.ui.View):
         self.add_item(TicketSelect())
 
 
-# --- 4. SERVER AUTHORIZATION & AUTO-LEAVE SYSTEM ---
+# --- 4. AUTO-CATEGORY SYNC (Channel Creation Listener) ---
+@bot.event
+async def on_guild_channel_create(channel):
+    """Jab aap PC Panel ya Android Injector se related koi naya channel banayein, wo auto-sync ho jaye"""
+    if channel.guild.id != MY_SERVER_ID:
+        return
+
+    name_lower = channel.name.lower()
+    keywords = ["pc-panel", "pcpanel", "android", "injector", "free-key", "panel-key"]
+    
+    # Agar channel ka naam panel/injector se related hai aur category me nahi hai
+    if any(k in name_lower for k in keywords) and channel.category_id != TICKET_CATEGORY_ID:
+        target_category = channel.guild.get_channel(TICKET_CATEGORY_ID)
+        if target_category and isinstance(target_category, discord.CategoryChannel):
+            try:
+                await channel.edit(category=target_category, sync_permissions=True, reason="Auto-moved to Ticket/Panel category")
+                print(f"[AUTO-SYNC] Moved channel #{channel.name} into Ticket Category!", flush=True)
+            except Exception as e:
+                print(f"[AUTO-SYNC ERROR]: {e}", flush=True)
+
+
+# --- 5. SERVER AUTHORIZATION SYSTEM ---
 @bot.event
 async def on_guild_join(guild):
     if guild.id != MY_SERVER_ID:
@@ -298,7 +318,7 @@ async def global_slash_check(interaction: discord.Interaction):
     return True
 
 
-# --- 5. ANTI-NUKE LISTENERS ---
+# --- 6. ANTI-NUKE LISTENERS ---
 @bot.event
 async def on_guild_channel_delete(channel):
     if channel.guild.id != MY_SERVER_ID:
@@ -306,7 +326,6 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
-        # Agar admin ne ticket close kiya ho toh ban na kare
         if "ticket-" in channel.name.lower():
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
@@ -321,7 +340,7 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 6. Member Join/Leave Events ---
+# --- 7. Member Join & Leave Events ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
@@ -338,7 +357,6 @@ async def on_member_join(member):
                 pass
             return
 
-    # Nickname Tag
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
@@ -346,7 +364,6 @@ async def on_member_join(member):
         except Exception:
             pass
 
-    # Invite calculation
     inviter = None
     try:
         current_invites = await guild.invites()
@@ -432,7 +449,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 7. Interactive Mines Game View ---
+# --- 8. Interactive Mines Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -552,7 +569,7 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 8. Ready Event ---
+# --- 9. Ready Event ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -571,7 +588,7 @@ async def on_ready():
                 pass
 
 
-# --- 9. OwO Games Listener ---
+# --- 10. OwO Games Listener ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -714,10 +731,9 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 10. SLASH COMMANDS (INCLUDING TICKET PANEL SETUP) ---
+# --- 11. SLASH COMMANDS ---
 
-# Command to send the Aesthetic Ticket Selection Embed in Channel 1525182000825237653
-@bot.tree.command(name="sendticketpanel", description="Setup aesthetic ticket panel in ticket creation channel")
+@bot.tree.command(name="sendticketpanel", description="Setup aesthetic PC Panel & Android Injector ticket panel")
 async def sendticketpanel(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
@@ -729,27 +745,28 @@ async def sendticketpanel(interaction: discord.Interaction):
         return
 
     embed = discord.Embed(
-        title="✦  PERSISTX • OFFICIAL TICKET SUPPORT  ✦",
+        title="✦  PERSISTX • OFFICIAL PC & ANDROID STORE  ✦",
         description=(
-            "• **Please choose the product to create a ticket. 🛒**\n"
-            "• **Our staff will reach out to you after the ticket is created. 📖**\n"
-            "• **Please do not create tickets for fun. 🚫**\n"
-            "• **Happy Buying! 💖**\n\n"
+            "Welcome to **PERSISTX OFFICIAL STORE**! 🚀\n"
+            "Choose your required **PC Panel**, **Android Injector**, or **Free Key** from the menu below.\n\n"
             "```yaml\n"
-            "BINANCE ID : 1210948888\n"
-            "NAME       : PERSISTX_OFFICIAL\n"
-            "STATUS     : INSTANT DELIVERY\n"
+            "BINANCE PAY ID : 1210948888\n"
+            "MERCHANT NAME  : PERSISTX_OFFICIAL\n"
+            "DISPATCH       : INSTANT KEY & SETUP FILE\n"
+            "SUPPORT        : 24/7 DEDICATED ASSISTANCE\n"
             "```\n"
-            "*Select the required panel from the dropdown menu below to proceed!* 👇"
+            "• **Choose an option below to open a private ticket. 🛒**\n"
+            "• **Please avoid opening tickets without genuine intent. 🚫**\n\n"
+            "*Select your product below to get started!* 👇"
         ),
         color=0xED4245
     )
-    embed.set_author(name="PX TICKET KING • OFFICIAL", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-    embed.set_footer(text="CREATE TICKET PERSISTX © 2026", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+    embed.set_author(name="PX PANEL & INJECTOR KING", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+    embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Store", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
 
     view = TicketSelectView()
     await channel.send(embed=embed, view=view)
-    await interaction.response.send_message(f"✅ Ticket panel successfully sent to {channel.mention}!", ephemeral=True)
+    await interaction.response.send_message(f"✅ Professional ticket panel sent to {channel.mention}!", ephemeral=True)
 
 
 class OwOGroup(app_commands.Group):
@@ -825,7 +842,7 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
 
 
-# --- 11. Execution Start ---
+# --- 12. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
