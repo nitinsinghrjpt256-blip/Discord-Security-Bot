@@ -174,27 +174,17 @@ class TicketCloseView(discord.ui.View):
 
 class TicketSelect(discord.ui.Select):
     def __init__(self):
-        # Specially curated for PC Panels and Android Injectors
         options = [
-            # PC Panels
             discord.SelectOption(label="PC PANEL • FULL VIP (EXE)", description="Aimkill, Headshot, Silent Aim, ESP - PC", emoji="💻"),
             discord.SelectOption(label="PC PANEL • STREAMER BYPASS", description="Stream-Proof undetected bypass for PC", emoji="🖥️"),
             discord.SelectOption(label="PC PANEL • INTERNAL INJECTION", description="Ultra-smooth internal memory panel", emoji="⚡"),
-            
-            # Android Injectors
             discord.SelectOption(label="ANDROID INJECTOR • ROOT / NON-ROOT", description="Auto Headshot, Aimlock, 32/64 Bit Android", emoji="📱"),
             discord.SelectOption(label="ANDROID INJECTOR • LIB BYPASS VIP", description="100% Main ID Safe Lib Memory Injector", emoji="🛡️"),
             discord.SelectOption(label="ANDROID INJECTOR • EMOTE & VAULT", description="Rare bundles & all emotes unlock injector", emoji="✨"),
-
-            # Free Panels & Keys
             discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
-
-            # Business & Reseller
             discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
             discord.SelectOption(label="FF ID MARKET • BUY / SELL", description="Verified high-level Free Fire ID deals", emoji="🛒"),
             discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
-
-            # Support
             discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct support from Super Admin PERSISTX", emoji="🆘")
         ]
         super().__init__(
@@ -277,14 +267,12 @@ class TicketSelectView(discord.ui.View):
 # --- 4. AUTO-CATEGORY SYNC (Channel Creation Listener) ---
 @bot.event
 async def on_guild_channel_create(channel):
-    """Jab aap PC Panel ya Android Injector se related koi naya channel banayein, wo auto-sync ho jaye"""
     if channel.guild.id != MY_SERVER_ID:
         return
 
     name_lower = channel.name.lower()
     keywords = ["pc-panel", "pcpanel", "android", "injector", "free-key", "panel-key"]
     
-    # Agar channel ka naam panel/injector se related hai aur category me nahi hai
     if any(k in name_lower for k in keywords) and channel.category_id != TICKET_CATEGORY_ID:
         target_category = channel.guild.get_channel(TICKET_CATEGORY_ID)
         if target_category and isinstance(target_category, discord.CategoryChannel):
@@ -664,6 +652,7 @@ async def on_message(message):
                 return
             bal = get_user_balance(message.author.id)
             if message.author.id != MY_USER_ID and bet > bal:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient coins!")
                 return
             choice = parts[3].lower()[0] if len(parts) >= 4 else "h"
             choice_str = "Heads" if choice == "h" else "Tails"
@@ -733,8 +722,8 @@ async def on_message(message):
 
 # --- 11. SLASH COMMANDS ---
 
-@bot.tree.command(name="sendticketpanel", description="Setup aesthetic PC Panel & Android Injector ticket panel")
-async def sendticketpanel(interaction: discord.Interaction):
+@bot.tree.command(name="pxticketsetup", description="Setup aesthetic PC Panel & Android Injector ticket panel")
+async def pxticketsetup(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
         return
@@ -761,7 +750,7 @@ async def sendticketpanel(interaction: discord.Interaction):
         ),
         color=0xED4245
     )
-    embed.set_author(name="PX PANEL & INJECTOR KING", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+    embed.set_author(name="PX TICKET KING • PERSISTX", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
     embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Store", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
 
     view = TicketSelectView()
