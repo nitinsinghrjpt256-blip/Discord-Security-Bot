@@ -13,7 +13,6 @@ def home():
     return "Bot is online and running 24/7!"
 
 def run_web():
-    # Render default port 8080 use karta hai
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
 
@@ -26,32 +25,36 @@ def keep_alive():
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Anti-nuke tracking variables
+# Whitelist User IDs jinhe bot kabhi ban nahi karega
+WHITELIST_USERS = [1525179499602509977]
+
+# Anti-nuke settings: 5 second me 2 se zyada actions par trigger hoga
 channel_deletions = {}
 role_deletions = {}
-THRESHOLD = 3          # 10 second me 3 actions par trigger hoga
-WINDOW_SECONDS = 10
+THRESHOLD = 2          
+WINDOW_SECONDS = 5
 
 async def take_anti_nuke_action(guild, executor, action_name):
-    """Attacker ke roles hatana aur ban karna"""
-    if executor.id == guild.owner_id or executor.id == bot.user.id:
+    """Attacker ke paas chahe koi bhi role ho, direct ban karega (Whitelist chhodkar)"""
+    # Whitelist check: Owner, Bot khud, ya specific User ID
+    if executor.id == guild.owner_id or executor.id == bot.user.id or executor.id in WHITELIST_USERS:
         return
 
     try:
-        # Dangerous roles hatana
-        for role in executor.roles:
-            if role.permissions.administrator or role.permissions.manage_guild or role.permissions.manage_channels:
-                await executor.remove_roles(role, reason=f"Anti-Nuke Triggered: Mass {action_name}")
+        # Direct Ban attacker
+        await guild.ban(executor, reason=f"Anti-Nuke Triggered: Mass {action_name}", delete_message_days=0)
         
-        # User ko ban karna
-        await executor.ban(reason=f"Anti-Nuke Triggered: Mass {action_name}")
-        
-        # Server owner ko DM bhejna
+        # Server owner ko DM alert bhejna
         owner = guild.owner
         if owner:
-            await owner.send(f"🚨 **ANTI-NUKE ALERT**: `{executor.name}` ne mass {action_name} kiya tha. Unhe server se ban kar diya gaya hai.")
+            await owner.send(
+                f"🚨 **ANTI-NUKE ALERT**\n"
+                f"User: `{executor.name}` (ID: `{executor.id}`)\n"
+                f"Reason: Mass {action_name} detect hua (5 sec limit cross).\n"
+                f"Action: Server se **Permanently Ban** kar diya gaya hai."
+            )
     except Exception as e:
-        print(f"Action execute karne me error: {e}")
+        print(f"Attacker ko ban karne me error: {e}")
 
 
 # --- 3. Anti-Nuke Listeners ---
@@ -127,12 +130,12 @@ async def ping(ctx):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
-    print("Anti-Nuke system is active!")
+    print("Anti-Nuke security system is online!")
 
 
 # --- 5. Start Bot ---
 if __name__ == "__main__":
-    keep_alive()  # Web server background me start karega
+    keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
     if not token:
         print("ERROR: DISCORD_TOKEN environment variable nahi mila!")
