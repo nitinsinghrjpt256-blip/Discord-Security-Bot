@@ -39,8 +39,15 @@ class SecurityBot(commands.Bot):
     async def setup_hook(self):
         self.add_view(TicketSelectView())
         self.add_view(TicketCloseView())
-        await self.tree.sync()
-        print("[INIT] Slash Commands & Ticket Views synced!", flush=True)
+        try:
+            # Sync guild-specific taaki instant 1 second me Discord UI par command aa jaye
+            guild_obj = discord.Object(id=MY_SERVER_ID)
+            self.tree.copy_global_to(guild=guild_obj)
+            await self.tree.sync(guild=guild_obj)
+            await self.tree.sync()
+            print("[INIT] Slash Commands synced instantly for Guild ID!", flush=True)
+        except Exception as e:
+            print(f"[SYNC ERROR]: {e}", flush=True)
 
 bot = SecurityBot()
 
@@ -62,7 +69,7 @@ TICKET_PANEL_CHANNEL_ID = 1525182000825237653  # Ticket creation channel
 TICKET_CATEGORY_ID = 1525181999646507118       # Ticket category ID
 QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png" 
 
-ticket_counter = 207  # Starting at 207
+ticket_counter = 207  # Starting counter
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
 # Caches
@@ -262,6 +269,29 @@ class TicketSelectView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(TicketSelect())
+
+
+def get_ticket_panel_embed(guild):
+    embed = discord.Embed(
+        title="✦  PERSISTX • OFFICIAL PC & ANDROID STORE  ✦",
+        description=(
+            "Welcome to **PERSISTX OFFICIAL STORE**! 🚀\n"
+            "Choose your required **PC Panel**, **Android Injector**, or **Free Key** from the menu below.\n\n"
+            "```yaml\n"
+            "BINANCE PAY ID : 1210948888\n"
+            "MERCHANT NAME  : PERSISTX_OFFICIAL\n"
+            "DISPATCH       : INSTANT KEY & SETUP FILE\n"
+            "SUPPORT        : 24/7 DEDICATED ASSISTANCE\n"
+            "```\n"
+            "• **Choose an option below to open a private ticket. 🛒**\n"
+            "• **Please avoid opening tickets without genuine intent. 🚫**\n\n"
+            "*Select your product below to get started!* 👇"
+        ),
+        color=0xED4245
+    )
+    embed.set_author(name="PX TICKET KING • PERSISTX", icon_url=guild.icon.url if guild.icon else None)
+    embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Store", icon_url=guild.icon.url if guild.icon else None)
+    return embed
 
 
 # --- 4. AUTO-CATEGORY SYNC (Channel Creation Listener) ---
@@ -557,7 +587,7 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 9. Ready Event ---
+# --- 9. Ready Event (Includes Auto-Ticket Panel Deploy) ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -575,8 +605,23 @@ async def on_ready():
             except Exception:
                 pass
 
+            # AUTO TICKET PANEL DEPLOYMENT CHECK
+            try:
+                t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
+                if t_channel:
+                    # Check agar pichle messages me hamara embed nahi hai toh post kar do
+                    history = [msg async for msg in t_channel.history(limit=5)]
+                    already_posted = any(msg.author.id == bot.user.id and len(msg.embeds) > 0 for msg in history)
+                    if not already_posted:
+                        embed = get_ticket_panel_embed(guild)
+                        view = TicketSelectView()
+                        await t_channel.send(embed=embed, view=view)
+                        print(f"[AUTO-DEPLOY] Ticket panel successfully posted in #{t_channel.name}!", flush=True)
+            except Exception as e:
+                print(f"[AUTO-DEPLOY ERROR]: {e}", flush=True)
 
-# --- 10. OwO Games Listener ---
+
+# --- 10. OwO & Text Commands Listener ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -585,6 +630,28 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
+    # Prefix Text Commands for Instant Ticket Setup (No Slash UI Required)
+    if lowered in ["!pxticketsetup", "!ticketsetup", "/pxticketsetup"]:
+        if message.guild.id != MY_SERVER_ID:
+            await message.channel.send(ACCESS_DENIED_MSG)
+            return
+
+        if not message.author.guild_permissions.administrator and message.author.id != MY_USER_ID:
+            await message.channel.send("❌ Sirf Administrator use kar sakte hain!")
+            return
+
+        t_channel = message.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
+        if not t_channel:
+            await message.channel.send(f"❌ Ticket Channel ID `{TICKET_PANEL_CHANNEL_ID}` nahi mila!")
+            return
+
+        embed = get_ticket_panel_embed(message.guild)
+        view = TicketSelectView()
+        await t_channel.send(embed=embed, view=view)
+        await message.channel.send(f"✅ Professional ticket panel successfully sent to {t_channel.mention}!")
+        return
+
+    # OwO Mini-Games
     if lowered.startswith("owo") or lowered.startswith("px owo"):
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -652,7 +719,6 @@ async def on_message(message):
                 return
             bal = get_user_balance(message.author.id)
             if message.author.id != MY_USER_ID and bet > bal:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient coins!")
                 return
             choice = parts[3].lower()[0] if len(parts) >= 4 else "h"
             choice_str = "Heads" if choice == "h" else "Tails"
@@ -724,35 +790,16 @@ async def on_message(message):
 
 @bot.tree.command(name="pxticketsetup", description="Setup aesthetic PC Panel & Android Injector ticket panel")
 async def pxticketsetup(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator:
+    if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
         await interaction.response.send_message("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
         return
 
     channel = interaction.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
     if not channel:
-        await interaction.response.send_message(f"❌ Ticket Channel ID {TICKET_PANEL_CHANNEL_ID} nahi mila!", ephemeral=True)
+        await interaction.response.send_message(f"❌ Ticket Channel ID `{TICKET_PANEL_CHANNEL_ID}` nahi mila!", ephemeral=True)
         return
 
-    embed = discord.Embed(
-        title="✦  PERSISTX • OFFICIAL PC & ANDROID STORE  ✦",
-        description=(
-            "Welcome to **PERSISTX OFFICIAL STORE**! 🚀\n"
-            "Choose your required **PC Panel**, **Android Injector**, or **Free Key** from the menu below.\n\n"
-            "```yaml\n"
-            "BINANCE PAY ID : 1210948888\n"
-            "MERCHANT NAME  : PERSISTX_OFFICIAL\n"
-            "DISPATCH       : INSTANT KEY & SETUP FILE\n"
-            "SUPPORT        : 24/7 DEDICATED ASSISTANCE\n"
-            "```\n"
-            "• **Choose an option below to open a private ticket. 🛒**\n"
-            "• **Please avoid opening tickets without genuine intent. 🚫**\n\n"
-            "*Select your product below to get started!* 👇"
-        ),
-        color=0xED4245
-    )
-    embed.set_author(name="PX TICKET KING • PERSISTX", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-    embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Store", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-
+    embed = get_ticket_panel_embed(interaction.guild)
     view = TicketSelectView()
     await channel.send(embed=embed, view=view)
     await interaction.response.send_message(f"✅ Professional ticket panel sent to {channel.mention}!", ephemeral=True)
@@ -796,7 +843,7 @@ bot.tree.add_command(owo_group)
 
 @bot.tree.command(name="setpx", description="Bulk PX tag apply")
 async def setpx(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator:
+    if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
         return
     await interaction.response.defer()
     guild = interaction.guild
@@ -819,7 +866,7 @@ async def setpx(interaction: discord.Interaction):
 @bot.tree.command(name="clear", description="Clear chat messages")
 @app_commands.describe(amount="Messages count")
 async def clear(interaction: discord.Interaction, amount: int):
-    if not interaction.user.guild_permissions.manage_messages:
+    if not interaction.user.guild_permissions.manage_messages and interaction.user.id != MY_USER_ID:
         return
     await interaction.response.defer(ephemeral=True)
     deleted = await interaction.channel.purge(limit=max(1, amount))
