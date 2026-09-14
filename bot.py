@@ -26,10 +26,10 @@ def keep_alive():
 
 # --- 2. Discord Bot Setup & Intents ---
 intents = discord.Intents.default()
-intents.members = True          # Join/Leave tracking ke liye zaroori
+intents.members = True          # Join/Leave tracking
 intents.message_content = True  
 intents.guilds = True           
-intents.invites = True          # Invites cache tracking
+intents.invites = True          # Invite Cache Tracking
 intents.reactions = True        
 
 class SecurityBot(commands.Bot):
@@ -76,7 +76,7 @@ async def take_anti_nuke_action(guild, executor, action_name):
             await owner.send(
                 f"🚨 **ANTI-NUKE ALERT**\n\n"
                 f"• **User:** `{executor.name}` (ID: `{executor.id}`)\n"
-                f"• **Action:** Mass {action_name} detect hone par ban kiya gaya."
+                f"• **Action:** Mass {action_name} detect hone par banned."
             )
     except Exception as e:
         print(f"[ANTI-NUKE ERROR] {e}", flush=True)
@@ -110,13 +110,13 @@ async def on_invite_delete(invite):
         del invites_cache[invite.guild.id][invite.code]
 
 
-# --- 4. Welcome & Invite Tracking Event ---
+# --- 4. Member Join Event (Exact Screenshot Card) ---
 @bot.event
 async def on_member_join(member):
     print(f"\n[JOIN EVENT] Member Joined: {member.name} ({member.id})", flush=True)
     guild = member.guild
 
-    # 1. Automatic Nickname Tag (PX | Name)
+    # 1. Auto Nickname (PX | Name)
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role:
@@ -146,50 +146,49 @@ async def on_member_join(member):
     except Exception as e:
         print(f"[INVITE ERROR] {e}", flush=True)
 
-    # Fallback to PERSIST-X agar unknown ya direct ho
+    # Fallback to PERSIST-X if unknown or direct invite
     if inviter and not inviter.bot:
         inviter_id = inviter.id
-        inviter_name = inviter.name
+        inviter_display = inviter.mention
     else:
         inviter_id = MY_USER_ID
-        owner_member = guild.get_member(MY_USER_ID)
-        inviter_name = owner_member.name if owner_member else "PERSIST-X"
+        inviter_display = f"<@{MY_USER_ID}>"
 
     member_invited_by[member.id] = inviter_id
     user_invites[inviter_id] = user_invites.get(inviter_id, 0) + 1
     total_invites = user_invites[inviter_id]
 
-    # 3. Welcome Notification Message & Embed Card
+    # 3. Exact Welcome Notification Embed (Screenshot Match)
     welcome_channel = guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
-        welcome_text = (
-            f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-            f"  ✦ 𝐖𝐞𝐥𝐜𝐨𝐦𝐞 {member.mention} ✦\n"
-            f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n\n"
-            f"> 📨 **Invited By:** {inviter_name}\n"
-            f"> 📊 **Total Invites:** `{total_invites}`\n\n"
-            f"*Have a great time here!* ✧"
-        )
-
         guild_icon = guild.icon.url if guild.icon else None
+        user_avatar = member.display_avatar.url
+
         embed = discord.Embed(
-            title="✦  MEMBER PROFILE & LINKS  ✦",
+            title="✦  WELCOME TO PX PANEL  ✦",
             description=(
-                f"Welcome to **{guild.name}**!\n"
+                f"Hey {member.mention}, welcome to **{guild.name}**!\n"
+                f"We're glad to have you with us in **PX FAMILY**.\n\n"
+                f"**Member Information**\n"
+                f"• **Username:** `{member.name}`\n"
+                f"• **Invited By:** {inviter_display}\n"
+                f"• **Total Invites:** `{total_invites}`\n"
                 f"• **Member Count:** `#{guild.member_count}`\n\n"
                 f"**Important Channels**\n"
-                f"📜 **Rule Here:** <#{RULE_CHANNEL_ID}>\n"
-                f"💬 **Chat Here:** <#{CHAT_CHANNEL_ID}>"
+                f"📜 **Rules:** <#{RULE_CHANNEL_ID}>\n"
+                f"💬 **General Chat:** <#{CHAT_CHANNEL_ID}>\n\n"
+                f"*Please read the rules and have a wonderful time!* ✨"
             ),
             color=0xFEE75C
         )
-        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_author(name="New Member Joined!", icon_url=guild_icon)
+        embed.set_thumbnail(url=user_avatar)
         embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
         embed.timestamp = datetime.utcnow()
 
         try:
-            await welcome_channel.send(content=welcome_text, embed=embed)
-            print(f"[SUCCESS] Sent welcome notification to channel {WELCOME_CHANNEL_ID}", flush=True)
+            await welcome_channel.send(content=f"Welcome {member.mention}!", embed=embed)
+            print(f"[SUCCESS] Welcome embed sent to channel {WELCOME_CHANNEL_ID}", flush=True)
         except Exception as e:
             print(f"[WELCOME SEND ERROR] {e}", flush=True)
     else:
@@ -216,10 +215,10 @@ async def on_member_join(member):
         dm_embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
         await member.send(embed=dm_embed)
     except Exception as e:
-        print(f"[DM SKIP] User ka DM band tha: {e}", flush=True)
+        print(f"[DM SKIP] User ka DM off tha: {e}", flush=True)
 
 
-# --- 5. Leave Tracker Event ---
+# --- 5. Member Leave Event (Minus Invites + Leave Log) ---
 @bot.event
 async def on_member_remove(member):
     print(f"\n[LEAVE EVENT] Member Left: {member.name} ({member.id})", flush=True)
@@ -280,7 +279,7 @@ async def on_guild_role_delete(role):
             await take_anti_nuke_action(guild, executor, "Role Deletions")
 
 
-# --- 7. Giveaway Reaction Tracking ---
+# --- 7. Giveaway Reaction Tracking (Live DM to Owner) ---
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.message_id in active_giveaways and str(payload.emoji) == "🎉":
@@ -314,6 +313,7 @@ async def on_raw_reaction_add(payload):
 
 # --- 8. Slash Commands ---
 
+# 1. Bulk Set PX Tag
 @bot.tree.command(name="setpx", description="Server ke sabhi members ke name ke aage PX tag lagayein")
 async def setpx(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
@@ -340,6 +340,7 @@ async def setpx(interaction: discord.Interaction):
     await interaction.followup.send(f"✅ Completed! `{changed}` members ke naam ke aage `PX | ` lag chuka hai.")
 
 
+# 2. Giveaway Command (Exact Zynrax Style)
 @bot.tree.command(name="giveaway", description="Start a new giveaway")
 @app_commands.describe(prize="Prize", duration_minutes="Duration in minutes", winners="Number of winners")
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
@@ -414,6 +415,7 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     await interaction.channel.send(content=f"Badhai ho {winners_mention}! Aapne **{prize}** jeet liya hai! 🥳", embed=end_embed)
 
 
+# 3. Check Invites
 @bot.tree.command(name="invites", description="Check total invites")
 async def invites(interaction: discord.Interaction, member: discord.Member = None):
     target = member or interaction.user
@@ -421,6 +423,7 @@ async def invites(interaction: discord.Interaction, member: discord.Member = Non
     await interaction.response.send_message(f"📊 {target.mention} ke paas abhi total **{count}** active invites hain.")
 
 
+# 4. Clear Chat
 @bot.tree.command(name="clear", description="Clear chat messages")
 @app_commands.describe(amount="Messages count")
 async def clear(interaction: discord.Interaction, amount: int):
@@ -432,6 +435,7 @@ async def clear(interaction: discord.Interaction, amount: int):
     await interaction.followup.send(f"🧹 `{len(deleted)}` messages deleted!", ephemeral=True)
 
 
+# 5. Ping
 @bot.tree.command(name="ping", description="Check latency")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
