@@ -1,11 +1,14 @@
 import os
+import random
+import asyncio
 import threading
 from datetime import datetime, timedelta
 from flask import Flask
 import discord
+from discord import app_commands
 from discord.ext import commands
 
-# --- 1. Web Server (Render & UptimeRobot ke liye) ---
+# --- 1. Web Server (Render & Uptime ke liye) ---
 web_app = Flask('')
 
 @web_app.route('/')
@@ -23,38 +26,43 @@ def keep_alive():
 
 # --- 2. Discord Bot Setup ---
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Whitelist User IDs jinhe bot kabhi ban nahi karega
+class SecurityBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
+
+    async def setup_hook(self):
+        # Global slash commands sync
+        await self.tree.sync()
+        print("Slash Commands successfully sync ho gaye!")
+
+bot = SecurityBot()
+
+# Whitelist User IDs (Aapki ID safe rahegi)
 WHITELIST_USERS = [1525179499602509977]
 
-# Anti-nuke settings: 5 second me 2 se zyada actions par trigger hoga
+# Anti-Nuke Settings (5 second me 2 se zyada deletions)
 channel_deletions = {}
 role_deletions = {}
 THRESHOLD = 2          
 WINDOW_SECONDS = 5
 
 async def take_anti_nuke_action(guild, executor, action_name):
-    """Attacker ke paas chahe koi bhi role ho, direct ban karega (Whitelist chhodkar)"""
-    # Whitelist check: Owner, Bot khud, ya specific User ID
+    """Attacker ko direct ban karega (Whitelist chhodkar)"""
     if executor.id == guild.owner_id or executor.id == bot.user.id or executor.id in WHITELIST_USERS:
         return
 
     try:
-        # Direct Ban attacker
         await guild.ban(executor, reason=f"Anti-Nuke Triggered: Mass {action_name}", delete_message_days=0)
-        
-        # Server owner ko DM alert bhejna
         owner = guild.owner
         if owner:
             await owner.send(
                 f"🚨 **ANTI-NUKE ALERT**\n"
                 f"User: `{executor.name}` (ID: `{executor.id}`)\n"
-                f"Reason: Mass {action_name} detect hua (5 sec limit cross).\n"
-                f"Action: Server se **Permanently Ban** kar diya gaya hai."
+                f"Action: Mass {action_name} detect hone par server se **Permanently Ban** kar diya gaya hai."
             )
     except Exception as e:
-        print(f"Attacker ko ban karne me error: {e}")
+        print(f"Ban action failed: {e}")
 
 
 # --- 3. Anti-Nuke Listeners ---
@@ -89,51 +97,138 @@ async def on_guild_role_delete(role):
             await take_anti_nuke_action(guild, executor, "Role Deletions")
 
 
-# --- 4. Chat & Moderation Commands ---
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def clear(ctx, amount: int = 5):
-    """Chat messages clear karne ke liye: !clear 10"""
-    if amount < 1:
-        await ctx.send("Kripya 1 se bada number daalein.", delete_after=4)
+# --- 4. Slash Commands ---
+
+# 1. Giveaway Command
+@bot.tree.command(name="giveaway", description="Naya giveaway start karein")
+@app_commands.describe(
+    prize="Giveaway ka prize (e.g., 1 MONTH NITRO)",
+    duration_minutes="Giveaway kitne minute chalega",
+    winners="Kitne winners select karne hain (default: 1)"
+)
+async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message("Aapke paas giveaway host karne ki permission nahi hai!", ephemeral=True)
         return
-    deleted = await ctx.channel.purge(limit=amount + 1)
-    await ctx.send(f"🧹 `{len(deleted) - 1}` messages delete kar diye gaye!", delete_after=4)
 
-@bot.command()
-@commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, reason="Koi reason nahi diya gaya"):
-    """User kick karne ke liye: !kick @user reason"""
+    end_time = datetime.utcnow() + timedelta(minutes=duration_minutes)
+    unix_timestamp = int(end_time.timestamp())
+
+    # Embed creation (Image ke style me)
+    embed = discord.Embed(
+        title=f"🎁 {prize.upper()} 🎁",
+        description=(
+            f"• **Winners:** {winners}\n"
+            f"• **Ends:** <t:{unix_timestamp}:R> (<t:{unix_timestamp}:f>)\n"
+            f"• **Hosted by:** {interaction.user.mention}\n\n"
+            f"• **React with 🎉 to participate!**"
+        ),
+        color=discord.Color.gold()
+    )
+    embed.set_footer(text="Ends at")
+    embed.timestamp = end_time
+
+    await interaction.response.send_message("🎉 **New Giveaway** 🎉", embed=embed)
+    msg = await interaction.original_response()
+    await msg.add_reaction("🎉")
+
+    # Time wait
+    await asyncio.sleep(duration_minutes * 60)
+
+    # Fetch updated message with reactions
+    try:
+        updated_msg = await interaction.channel.fetch_message(msg.id)
+    except discord.NotFound:
+        return
+
+    reaction = discord.utils.get(updated_msg.reactions, emoji="🎉")
+    users = [user async for user in reaction.users() if not user.bot]
+
+    if not users:
+        await interaction.channel.send(f"Giveaway ended for **{prize}**! Koi valid entry nahi aayi thi.")
+        return
+
+    # Random selection
+    actual_winners_count = min(len(users), winners)
+    selected_winners = random.sample(users, actual_winners_count)
+    winners_mention = ", ".join([w.mention for w in selected_winners])
+
+    # End Embed
+    end_embed = discord.Embed(
+        title=f"🎉 GIVEAWAY ENDED 🎉",
+        description=(
+            f"**Prize:** {prize}\n"
+            f"**Winner(s):** {winners_mention}\n"
+            f"**Hosted by:** {interaction.user.mention}"
+        ),
+        color=discord.Color.green()
+    )
+    await interaction.channel.send(content=f"Badhai ho {winners_mention}! Aapne **{prize}** jeet liya hai! 🥳", embed=end_embed)
+
+
+# 2. Clear Chat Command
+@bot.tree.command(name="clear", description="Chat messages clear karein")
+@app_commands.describe(amount="Kitne messages delete karne hain")
+async def clear(interaction: discord.Interaction, amount: int):
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message("Aapke paas messages manage karne ki permission nahi hai!", ephemeral=True)
+        return
+    if amount < 1:
+        await interaction.response.send_message("Kam se kam 1 message select karein.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    deleted = await interaction.channel.purge(limit=amount)
+    await interaction.followup.send(f"🧹 `{len(deleted)}` messages delete kar diye gaye!", ephemeral=True)
+
+
+# 3. Kick Command
+@bot.tree.command(name="kick", description="User ko server se kick karein")
+@app_commands.describe(member="Member jise kick karna hai", reason="Kick karne ka reason")
+async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "Koi reason nahi diya gaya"):
+    if not interaction.user.guild_permissions.kick_members:
+        await interaction.response.send_message("Aapke paas kick karne ki permission nahi hai!", ephemeral=True)
+        return
     await member.kick(reason=reason)
-    await ctx.send(f"👢 {member.mention} ko kick kar diya gaya. Reason: {reason}")
+    await interaction.response.send_message(f"👢 {member.mention} ko kick kar diya gaya. Reason: {reason}")
 
-@bot.command()
-@commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason="Koi reason nahi diya gaya"):
-    """User ban karne ke liye: !ban @user reason"""
+
+# 4. Ban Command
+@bot.tree.command(name="ban", description="User ko permanently ban karein")
+@app_commands.describe(member="Member jise ban karna hai", reason="Ban karne ka reason")
+async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "Koi reason nahi diya gaya"):
+    if not interaction.user.guild_permissions.ban_members:
+        await interaction.response.send_message("Aapke paas ban karne ki permission nahi hai!", ephemeral=True)
+        return
     await member.ban(reason=reason)
-    await ctx.send(f"🔨 {member.mention} ko ban kar diya gaya. Reason: {reason}")
+    await interaction.response.send_message(f"🔨 {member.mention} ko ban kar diya gaya. Reason: {reason}")
 
-@bot.command()
-@commands.has_permissions(moderate_members=True)
-async def timeout(ctx, member: discord.Member, minutes: int, *, reason="Rule violation"):
-    """User ko timeout/mute karne ke liye: !timeout @user 10 reason"""
+
+# 5. Timeout Command
+@bot.tree.command(name="timeout", description="User ko timeout/mute karein")
+@app_commands.describe(member="Member jise timeout dena hai", minutes="Kitne minute ke liye", reason="Reason")
+async def timeout(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "Rule violation"):
+    if not interaction.user.guild_permissions.moderate_members:
+        await interaction.response.send_message("Aapke paas timeout karne ki permission nahi hai!", ephemeral=True)
+        return
     duration = timedelta(minutes=minutes)
     await member.timeout(duration, reason=reason)
-    await ctx.send(f"⏳ {member.mention} ko {minutes} minute ke liye timeout par daal diya gaya.")
+    await interaction.response.send_message(f"⏳ {member.mention} ko {minutes} minute ke liye timeout par daal diya gaya.")
 
-@bot.command()
-async def ping(ctx):
-    """Latency check: !ping"""
-    await ctx.send(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
+
+# 6. Ping Command
+@bot.tree.command(name="ping", description="Bot ki speed aur latency check karein")
+async def ping(interaction: discord.Interaction):
+    await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
+
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
-    print("Anti-Nuke security system is online!")
+    print("Anti-Nuke aur Slash Commands ready hain!")
 
 
-# --- 5. Start Bot ---
+# --- 5. Start Execution ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
