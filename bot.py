@@ -37,11 +37,11 @@ class SecurityBot(commands.Bot):
 
 bot = SecurityBot()
 
-# Aapki User ID (Whitelist + DM Reports ke liye)
+# Aapki User ID (Whitelist + Real-time DM Reports)
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = [MY_USER_ID]
 
-# Anti-Nuke Settings (5 second me 2 se zyada deletions par direct ban)
+# Anti-Nuke Settings (5 second me 2 se zyada actions par direct ban)
 channel_deletions = {}
 role_deletions = {}
 THRESHOLD = 2          
@@ -51,7 +51,7 @@ WINDOW_SECONDS = 5
 active_giveaways = {}
 
 async def take_anti_nuke_action(guild, executor, action_name):
-    """Attacker ko direct ban karega (Whitelist chhodkar)"""
+    """Attacker chahe koi bhi role rakhta ho, direct ban karega (Whitelist chhodkar)"""
     if executor.id == guild.owner_id or executor.id == bot.user.id or executor.id in WHITELIST_USERS:
         return
 
@@ -100,7 +100,7 @@ async def on_guild_role_delete(role):
             await take_anti_nuke_action(guild, executor, "Role Deletions")
 
 
-# --- 4. Real-Time Giveaway Participant Tracking (DM to You) ---
+# --- 4. Real-Time Giveaway Participant Tracking (Direct DM to You) ---
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.message_id in active_giveaways and str(payload.emoji) == "🎉":
@@ -125,49 +125,55 @@ async def on_raw_reaction_add(payload):
             my_user = await bot.fetch_user(MY_USER_ID)
             joined_user = guild.get_member(payload.user_id) or await bot.fetch_user(payload.user_id)
             await my_user.send(
-                f"📥 **New Entry in Giveaway!**\n"
+                f"📥 **PX PANEL Giveaway - New Entry!**\n"
                 f"🎁 **Prize:** `{prize}`\n"
-                f"👤 **User:** `{joined_user.name}` (ID: `{joined_user.id}`)\n"
-                f"📊 **Total Participants:** `{total_count}`"
+                f"👤 **Participant:** `{joined_user.name}` (ID: `{joined_user.id}`)\n"
+                f"📊 **Total Entries:** `{total_count}`"
             )
         except Exception as e:
-            print(f"Reaction add tracking error: {e}")
+            print(f"Tracking error: {e}")
 
 
 # --- 5. Slash Commands ---
 
-# 1. Giveaway Command (With @everyone @here & Live Timer)
-@bot.tree.command(name="giveaway", description="Naya giveaway start karein")
+# 1. Professional Giveaway Command
+@bot.tree.command(name="giveaway", description="PX PANEL official giveaway start karein")
 @app_commands.describe(
-    prize="Giveaway ka prize (e.g., 1 MONTH NITRO ID)",
-    duration_minutes="Giveaway kitne minute chalega",
-    winners="Kitne winners select karne hain (default: 1)"
+    prize="Giveaway prize (e.g., 1 MONTH NITRO ID)",
+    duration_minutes="Kitne minutes chalega (e.g., 60)",
+    winners="Kitne winners honge (default: 1)"
 )
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
     if not interaction.user.guild_permissions.manage_guild:
-        await interaction.response.send_message("Aapke paas permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("Aapke paas giveaway create karne ki permission nahi hai!", ephemeral=True)
         return
 
     end_time = datetime.utcnow() + timedelta(minutes=duration_minutes)
     unix_timestamp = int(end_time.timestamp())
+    guild_icon = interaction.guild.icon.url if interaction.guild.icon else None
 
+    # Custom Branded Embed
     embed = discord.Embed(
         title=f"🎁 {prize.upper()} 🎁",
         description=(
-            f"• **Winners:** {winners}\n"
-            f"• **Ends:** <t:{unix_timestamp}:R> (<t:{unix_timestamp}:f>)\n"
-            f"• **Hosted by:** {interaction.user.mention}\n\n"
-            f"• **React with 🎉 to participate!**\n\n"
+            f"**PX PANEL Server ki taraf se yeh giveaway organise kiya gaya hai.**\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👑 **Winners:** `{winners}`\n"
+            f"⏳ **Ends In:** <t:{unix_timestamp}:R> (<t:{unix_timestamp}:f>)\n"
+            f"🛡️ **Hosted & Sponsored by:** **Persistx**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👉 **Participate karne ke liye niche 🎉 react karein!**\n\n"
             f"⏳ **Time Remaining:** <t:{unix_timestamp}:R>"
         ),
         color=discord.Color.gold()
     )
-    embed.set_footer(text="Ends at")
+    embed.set_author(name="PX PANEL • OFFICIAL GIVEAWAY", icon_url=guild_icon)
+    embed.set_footer(text="PX PANEL Community • PX FAMILY💖")
     embed.timestamp = end_time
 
-    # @everyone aur @here ke sath send karein
+    # Send with @everyone & @here
     await interaction.response.send_message(
-        content="@everyone @here 🎉 **New Giveaway** 🎉",
+        content="@everyone @here 🎉 **New Giveaway Alert!**",
         embed=embed,
         allowed_mentions=discord.AllowedMentions(everyone=True)
     )
@@ -177,7 +183,7 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     # Track giveaway message
     active_giveaways[msg.id] = {"prize": prize}
 
-    # Time wait
+    # Timer wait
     await asyncio.sleep(duration_minutes * 60)
 
     try:
@@ -189,54 +195,60 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     reaction = discord.utils.get(updated_msg.reactions, emoji="🎉")
     users = [user async for user in reaction.users() if not user.bot]
 
-    # Active tracker se hatana
     active_giveaways.pop(msg.id, None)
 
-    # Embed mark as Ended
-    embed.title = f"🎁 {prize.upper()} (ENDED) 🎁"
+    # Embed mark as Concluded
+    embed.title = f"🎁 {prize.upper()} (CONCLUDED) 🎁"
     embed.description = (
-        f"• **Winners:** {winners}\n"
-        f"• **Ended:** <t:{unix_timestamp}:R>\n"
-        f"• **Hosted by:** {interaction.user.mention}"
+        f"**Giveaway ab officially samapt ho chuka hai!**\n\n"
+        f"👑 **Total Winners:** `{winners}`\n"
+        f"⏳ **Ended:** <t:{unix_timestamp}:R>\n"
+        f"🛡️ **Hosted & Sponsored by:** **Persistx**"
     )
     embed.color = discord.Color.dark_gray()
+    embed.set_footer(text="PX PANEL Community • PX FAMILY💖")
     await updated_msg.edit(embed=embed)
 
     if not users:
-        await interaction.channel.send(f"Giveaway ended for **{prize}**! Koi valid entry nahi aayi.")
+        await interaction.channel.send(f"⚠️ Giveaway ended for **{prize}**! Koi valid participant nahi mila.")
         return
 
-    # Pick Winners
+    # Random Winner Selection
     actual_winners_count = min(len(users), winners)
     selected_winners = random.sample(users, actual_winners_count)
     winners_mention = ", ".join([w.mention for w in selected_winners])
 
+    # Winner Announcement Embed
     end_embed = discord.Embed(
-        title="🎉 GIVEAWAY ENDED 🎉",
+        title="🏆 GIVEAWAY WINNER ANNOUNCED! 🏆",
         description=(
-            f"**Prize:** {prize}\n"
-            f"**Winner(s):** {winners_mention}\n"
-            f"**Hosted by:** {interaction.user.mention}"
+            f"Congratulations {winners_mention}!\n\n"
+            f"Aapne **{prize}** jeet liya hai jo **PX PANEL** ki taraf se sponsor kiya gaya tha by **Persistx**! 🥳\n\n"
+            f"Prize claim karne ke liye host ya ticket open karein."
         ),
         color=discord.Color.green()
     )
-    await interaction.channel.send(content=f"Badhai ho {winners_mention}! Aapne **{prize}** jeet liya hai! 🥳", embed=end_embed)
+    end_embed.set_author(name="PX PANEL • RESULTS", icon_url=guild_icon)
+    end_embed.set_footer(text="PX PANEL Community • PX FAMILY💖")
+    
+    await interaction.channel.send(content=f"🎉 Badhai ho {winners_mention}!", embed=end_embed)
 
-    # Aapko pura report DM me bhejna
+    # Detailed Final Report to Owner's DM
     try:
         my_user = await bot.fetch_user(MY_USER_ID)
         participants_names = "\n".join([f"- {u.name} (`{u.id}`)" for u in users])
         if len(participants_names) > 1500:
-            participants_names = participants_names[:1500] + "\n...aur bhi participants"
-        
+            participants_names = participants_names[:1500] + "\n...aur bhi participants hain"
+
         await my_user.send(
-            f"📊 **Giveaway Final Summary: {prize}**\n"
+            f"📊 **PX PANEL Giveaway Report: {prize}**\n"
+            f"• **Sponsored by:** Persistx\n"
             f"• **Total Participants:** `{len(users)}`\n"
             f"• **Winner(s):** {winners_mention}\n\n"
             f"📋 **Participant List:**\n{participants_names}"
         )
     except Exception as e:
-        print(f"Summary DM send karne me error: {e}")
+        print(f"Summary DM error: {e}")
 
 
 # 2. Clear Chat Command
@@ -298,7 +310,7 @@ async def ping(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
-    print("Anti-Nuke, Live Tracking aur Slash Commands ready hain!")
+    print("PX PANEL Security & Giveaway System is Online!")
 
 
 # --- 6. Start Execution ---
