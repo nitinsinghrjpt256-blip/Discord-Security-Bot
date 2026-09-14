@@ -26,7 +26,7 @@ def keep_alive():
 
 # --- 2. Discord Bot Setup & Intents ---
 intents = discord.Intents.default()
-intents.members = True          # Join/Leave tracking
+intents.members = True          # Join/Leave tracking ke liye mandatory
 intents.message_content = True  
 intents.guilds = True           
 intents.invites = True          # Invite Cache Tracking
@@ -46,8 +46,11 @@ bot = SecurityBot()
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = [MY_USER_ID]
 
-WELCOME_CHANNEL_ID = 1548745613640859729
-LEAVE_CHANNEL_ID = 1548745646717014029
+# Teeno Channels
+WELCOME_CHANNEL_ID = 1525182000825237648       # Professional Welcome with Avatar & Links
+INVITE_LOG_CHANNEL_ID = 1548745613640859729    # Invite Tracker Log
+LEAVE_CHANNEL_ID = 1548745646717014029         # Leave Notification
+
 CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
 
@@ -76,7 +79,7 @@ async def take_anti_nuke_action(guild, executor, action_name):
             await owner.send(
                 f"🚨 **ANTI-NUKE ALERT**\n\n"
                 f"• **User:** `{executor.name}` (ID: `{executor.id}`)\n"
-                f"• **Action:** Mass {action_name} detect hone par banned."
+                f"• **Action:** Mass {action_name} detect hone par ban kiya gaya."
             )
     except Exception as e:
         print(f"[ANTI-NUKE ERROR] {e}", flush=True)
@@ -110,13 +113,13 @@ async def on_invite_delete(invite):
         del invites_cache[invite.guild.id][invite.code]
 
 
-# --- 4. Member Join Event (Exact Screenshot Card) ---
+# --- 4. Member Join Event (Welcome Channel + Invite Tracker Channel + Auto-Nick + DM) ---
 @bot.event
 async def on_member_join(member):
     print(f"\n[JOIN EVENT] Member Joined: {member.name} ({member.id})", flush=True)
     guild = member.guild
 
-    # 1. Auto Nickname (PX | Name)
+    # 1. Automatic Nickname Tag (PX | Name)
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role:
@@ -146,19 +149,44 @@ async def on_member_join(member):
     except Exception as e:
         print(f"[INVITE ERROR] {e}", flush=True)
 
-    # Fallback to PERSIST-X if unknown or direct invite
+    # Fallback to PERSIST-X agar unknown ya direct ho
     if inviter and not inviter.bot:
         inviter_id = inviter.id
         inviter_display = inviter.mention
+        inviter_name = inviter.name
     else:
         inviter_id = MY_USER_ID
         inviter_display = f"<@{MY_USER_ID}>"
+        owner_member = guild.get_member(MY_USER_ID)
+        inviter_name = owner_member.name if owner_member else "PERSIST-X"
 
+    # Save tracking and increment invites
     member_invited_by[member.id] = inviter_id
     user_invites[inviter_id] = user_invites.get(inviter_id, 0) + 1
     total_invites = user_invites[inviter_id]
 
-    # 3. Exact Welcome Notification Embed (Screenshot Match)
+    # ----------------------------------------------------
+    # A. INVITE TRACKER CHANNEL (1548745613640859729)
+    # ----------------------------------------------------
+    invite_channel = guild.get_channel(INVITE_LOG_CHANNEL_ID)
+    if invite_channel:
+        invite_log_text = (
+            f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
+            f"  ✦ 𝐖𝐞𝐥𝐜𝐨𝐦𝐞 {member.mention} ✦\n"
+            f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n\n"
+            f"> 📨 **Invited By:** {inviter_name}\n"
+            f"> 📊 **Total Invites:** `{total_invites}`\n\n"
+            f"*Have a great time here!* ✧"
+        )
+        try:
+            await invite_channel.send(invite_log_text)
+            print(f"[SUCCESS] Sent invite log to #{invite_channel.name}", flush=True)
+        except Exception as e:
+            print(f"[INVITE LOG SEND ERROR] {e}", flush=True)
+
+    # ----------------------------------------------------
+    # B. WELCOME CHANNEL (1525182000825237648) with Avatar & Links
+    # ----------------------------------------------------
     welcome_channel = guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
         guild_icon = guild.icon.url if guild.icon else None
@@ -188,13 +216,13 @@ async def on_member_join(member):
 
         try:
             await welcome_channel.send(content=f"Welcome {member.mention}!", embed=embed)
-            print(f"[SUCCESS] Welcome embed sent to channel {WELCOME_CHANNEL_ID}", flush=True)
+            print(f"[SUCCESS] Sent welcome card to #{welcome_channel.name}", flush=True)
         except Exception as e:
             print(f"[WELCOME SEND ERROR] {e}", flush=True)
-    else:
-        print(f"[CHANNEL ERROR] Welcome channel ID {WELCOME_CHANNEL_ID} nahi mila!", flush=True)
 
-    # 4. Member Direct Message (DM)
+    # ----------------------------------------------------
+    # C. MEMBER PERSONAL DIRECT MESSAGE (DM)
+    # ----------------------------------------------------
     try:
         guild_icon = guild.icon.url if guild.icon else None
         dm_embed = discord.Embed(
@@ -215,10 +243,10 @@ async def on_member_join(member):
         dm_embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
         await member.send(embed=dm_embed)
     except Exception as e:
-        print(f"[DM SKIP] User ka DM off tha: {e}", flush=True)
+        print(f"[DM SKIP] User ka DM band tha: {e}", flush=True)
 
 
-# --- 5. Member Leave Event (Minus Invites + Leave Log) ---
+# --- 5. Member Leave Event (1548745646717014029) ---
 @bot.event
 async def on_member_remove(member):
     print(f"\n[LEAVE EVENT] Member Left: {member.name} ({member.id})", flush=True)
@@ -244,7 +272,7 @@ async def on_member_remove(member):
         )
         try:
             await leave_channel.send(leave_text)
-            print(f"[SUCCESS] Sent leave message to channel {LEAVE_CHANNEL_ID}", flush=True)
+            print(f"[SUCCESS] Sent leave message to #{leave_channel.name}", flush=True)
         except Exception as e:
             print(f"[LEAVE SEND ERROR] {e}", flush=True)
 
@@ -340,7 +368,7 @@ async def setpx(interaction: discord.Interaction):
     await interaction.followup.send(f"✅ Completed! `{changed}` members ke naam ke aage `PX | ` lag chuka hai.")
 
 
-# 2. Giveaway Command (Exact Zynrax Style)
+# 2. Giveaway Command (Zynrax Style)
 @bot.tree.command(name="giveaway", description="Start a new giveaway")
 @app_commands.describe(prize="Prize", duration_minutes="Duration in minutes", winners="Number of winners")
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
@@ -415,7 +443,7 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     await interaction.channel.send(content=f"Badhai ho {winners_mention}! Aapne **{prize}** jeet liya hai! 🥳", embed=end_embed)
 
 
-# 3. Check Invites
+# 3. Check Invites Command
 @bot.tree.command(name="invites", description="Check total invites")
 async def invites(interaction: discord.Interaction, member: discord.Member = None):
     target = member or interaction.user
@@ -423,7 +451,7 @@ async def invites(interaction: discord.Interaction, member: discord.Member = Non
     await interaction.response.send_message(f"📊 {target.mention} ke paas abhi total **{count}** active invites hain.")
 
 
-# 4. Clear Chat
+# 4. Clear Chat Command
 @bot.tree.command(name="clear", description="Clear chat messages")
 @app_commands.describe(amount="Messages count")
 async def clear(interaction: discord.Interaction, amount: int):
@@ -435,7 +463,7 @@ async def clear(interaction: discord.Interaction, amount: int):
     await interaction.followup.send(f"🧹 `{len(deleted)}` messages deleted!", ephemeral=True)
 
 
-# 5. Ping
+# 5. Ping Command
 @bot.tree.command(name="ping", description="Check latency")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
