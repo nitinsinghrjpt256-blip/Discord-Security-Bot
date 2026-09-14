@@ -32,31 +32,11 @@ intents.guilds = True
 intents.invites = True          
 intents.reactions = True        
 
-class SecurityBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix=["!", "owo ", "OwO ", "OWO "], intents=intents)
-
-    async def setup_hook(self):
-        self.add_view(TicketSelectView())
-        self.add_view(TicketCloseView())
-        try:
-            # Sync guild-specific taaki instant 1 second me Discord UI par command aa jaye
-            guild_obj = discord.Object(id=MY_SERVER_ID)
-            self.tree.copy_global_to(guild=guild_obj)
-            await self.tree.sync(guild=guild_obj)
-            await self.tree.sync()
-            print("[INIT] Slash Commands synced instantly for Guild ID!", flush=True)
-        except Exception as e:
-            print(f"[SYNC ERROR]: {e}", flush=True)
-
-bot = SecurityBot()
-
-# --- Server & System Configuration ---
-MY_SERVER_ID = 1525181999147388958             # Official Server Lock
+# Configuration Constants
+MY_SERVER_ID = 1525181999147388958             # Target Guild ID
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = []
 
-# Channels
 WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
 INVITE_LOG_CHANNEL_ID = 1548745613640859729    # PX INVITER BOT
 LEAVE_CHANNEL_ID = 1548745646717014029         # PX LEAVE BOT
@@ -64,12 +44,11 @@ OWO_CHANNEL_ID = 1548770349351575632           # PX OWO BOT
 CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
 
-# Ticket Setup Configuration
-TICKET_PANEL_CHANNEL_ID = 1525182000825237653  # Ticket creation channel
-TICKET_CATEGORY_ID = 1525181999646507118       # Ticket category ID
+TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
+TICKET_CATEGORY_ID = 1525181999646507118       
 QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png" 
 
-ticket_counter = 207  # Starting counter
+ticket_counter = 207
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
 # Caches
@@ -77,11 +56,20 @@ invites_cache = {}
 user_invites = {}           
 member_invited_by = {}      
 active_giveaways = {}
-
-# OwO Economy
 user_balances = {}          
 daily_cooldowns = {}        
 channel_webhooks = {}       
+
+
+class SecurityBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
+
+    async def setup_hook(self):
+        self.add_view(TicketSelectView())
+        self.add_view(TicketCloseView())
+
+bot = SecurityBot()
 
 
 # --- OwO Helper Functions ---
@@ -294,7 +282,7 @@ def get_ticket_panel_embed(guild):
     return embed
 
 
-# --- 4. AUTO-CATEGORY SYNC (Channel Creation Listener) ---
+# --- 4. AUTO-CATEGORY SYNC ---
 @bot.event
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
@@ -587,7 +575,7 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 9. Ready Event (Includes Auto-Ticket Panel Deploy) ---
+# --- 9. Ready Event (Auto-Post Panel + Instant Guild Slash Sync) ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -595,6 +583,16 @@ async def on_ready():
     print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
     print(f"==========================================\n", flush=True)
 
+    # Force Guild Slash Commands Sync to appear instantly on UI
+    try:
+        guild_obj = discord.Object(id=MY_SERVER_ID)
+        bot.tree.copy_global_to(guild=guild_obj)
+        synced = await bot.tree.sync(guild=guild_obj)
+        print(f"[SLASH-SYNC] Successfully synced {len(synced)} slash commands directly to Guild!", flush=True)
+    except Exception as e:
+        print(f"[SLASH-SYNC ERROR]: {e}", flush=True)
+
+    # Invite Cache
     for guild in list(bot.guilds):
         if guild.id != MY_SERVER_ID:
             await guild.leave()
@@ -605,190 +603,25 @@ async def on_ready():
             except Exception:
                 pass
 
-            # AUTO TICKET PANEL DEPLOYMENT CHECK
+            # Auto Check & Post Ticket Panel
             try:
                 t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
                 if t_channel:
-                    # Check agar pichle messages me hamara embed nahi hai toh post kar do
                     history = [msg async for msg in t_channel.history(limit=5)]
                     already_posted = any(msg.author.id == bot.user.id and len(msg.embeds) > 0 for msg in history)
                     if not already_posted:
                         embed = get_ticket_panel_embed(guild)
                         view = TicketSelectView()
                         await t_channel.send(embed=embed, view=view)
-                        print(f"[AUTO-DEPLOY] Ticket panel successfully posted in #{t_channel.name}!", flush=True)
+                        print(f"[AUTO-DEPLOY] Ticket panel posted in #{t_channel.name}!", flush=True)
             except Exception as e:
                 print(f"[AUTO-DEPLOY ERROR]: {e}", flush=True)
 
 
-# --- 10. OwO & Text Commands Listener ---
-@bot.event
-async def on_message(message):
-    if message.author.bot or not message.guild:
-        return
+# --- 10. SLASH COMMANDS ---
 
-    content = message.content.strip()
-    lowered = content.lower()
-
-    # Prefix Text Commands for Instant Ticket Setup (No Slash UI Required)
-    if lowered in ["!pxticketsetup", "!ticketsetup", "/pxticketsetup"]:
-        if message.guild.id != MY_SERVER_ID:
-            await message.channel.send(ACCESS_DENIED_MSG)
-            return
-
-        if not message.author.guild_permissions.administrator and message.author.id != MY_USER_ID:
-            await message.channel.send("❌ Sirf Administrator use kar sakte hain!")
-            return
-
-        t_channel = message.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
-        if not t_channel:
-            await message.channel.send(f"❌ Ticket Channel ID `{TICKET_PANEL_CHANNEL_ID}` nahi mila!")
-            return
-
-        embed = get_ticket_panel_embed(message.guild)
-        view = TicketSelectView()
-        await t_channel.send(embed=embed, view=view)
-        await message.channel.send(f"✅ Professional ticket panel successfully sent to {t_channel.mention}!")
-        return
-
-    # OwO Mini-Games
-    if lowered.startswith("owo") or lowered.startswith("px owo"):
-        if message.guild.id != MY_SERVER_ID:
-            await message.channel.send(ACCESS_DENIED_MSG)
-            return
-        if message.channel.id != OWO_CHANNEL_ID:
-            return
-
-        parts = content.split()
-        if len(parts) == 1:
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"**{message.author.name}**! (Try `owo cash`, `owo daily`, `owo cf <amount>`, `owo s <amount>`, `owo mine <amount>`)")
-            return
-
-        subcmd = parts[1].lower()
-
-        if subcmd in ["cash", "money", "bal", "balance"]:
-            display_bal = format_balance(message.author.id)
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"👛 **{message.author.display_name}**'s Balance: **{display_bal}** OwO Coins")
-
-        elif subcmd in ["daily"]:
-            now = datetime.utcnow()
-            last_claim = daily_cooldowns.get(message.author.id)
-            if last_claim and (now - last_claim) < timedelta(hours=24):
-                rem = timedelta(hours=24) - (now - last_claim)
-                hours, remainder = divmod(int(rem.total_seconds()), 3600)
-                minutes, _ = divmod(remainder, 60)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"⏳ Next claim in `{hours}h {minutes}m`.")
-                return
-
-            reward = random.randint(5000, 15000)
-            update_user_balance(message.author.id, reward)
-            daily_cooldowns[message.author.id] = now
-            display_bal = format_balance(message.author.id)
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎁 **{message.author.display_name}**, aapko **{reward:,}** OwO Coins mile! Total: **{display_bal}**")
-
-        elif subcmd in ["mine", "mines"]:
-            if len(parts) < 3:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo mine <amount>`")
-                return
-            try:
-                bet = int(parts[2])
-            except ValueError:
-                return
-            if bet <= 0:
-                return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and bet > bal:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient balance!")
-                return
-
-            view = MinesGameView(message.author, bet)
-            await message.channel.send(
-                content=f"💣 **MINES GAME STARTED** | Bet: **{bet:,}** OwO Coins\nGrid me **3 Hidden Bombs (💣)** hain. 💎 dhoondhein aur Cashout karein!",
-                view=view
-            )
-
-        elif subcmd in ["cf", "coinflip"]:
-            if len(parts) < 3:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo cf <amount> [h/t]`")
-                return
-            try:
-                bet = int(parts[2])
-            except ValueError:
-                return
-            if bet <= 0:
-                return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and bet > bal:
-                return
-            choice = parts[3].lower()[0] if len(parts) >= 4 else "h"
-            choice_str = "Heads" if choice == "h" else "Tails"
-            result = random.choice(["Heads", "Tails"])
-
-            if result == choice_str:
-                update_user_balance(message.author.id, bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 Lands on **{result}**! 🎉 Won **{bet:,}** Coins! (Balance: **{display_bal}**)")
-            else:
-                update_user_balance(message.author.id, -bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 Lands on **{result}**! 💀 Lost **{bet:,}** Coins. (Balance: **{display_bal}**)")
-
-        elif subcmd in ["s", "slot", "slots"]:
-            if len(parts) < 3:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo s <amount>`")
-                return
-            try:
-                bet = int(parts[2])
-            except ValueError:
-                return
-            if bet <= 0:
-                return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and bet > bal:
-                return
-
-            icons = ["🍒", "🍋", "🍇", "💎", "7️⃣"]
-            r1, r2, r3 = random.choice(icons), random.choice(icons), random.choice(icons)
-            if r1 == r2 == r3:
-                winnings = bet * 4
-                update_user_balance(message.author.id, winnings)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n🔥 **JACKPOT!** Won **{winnings:,}** Coins!")
-            elif r1 == r2 or r2 == r3 or r1 == r3:
-                winnings = int(bet * 1.5)
-                update_user_balance(message.author.id, winnings - bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n✨ Small Win! Won **{winnings:,}** Coins!")
-            else:
-                update_user_balance(message.author.id, -bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n💔 Lost **{bet:,}** coins.")
-
-        elif subcmd in ["give", "pay", "send"]:
-            if len(message.mentions) == 0 or len(parts) < 4:
-                return
-            target = message.mentions[0]
-            if target.id == message.author.id:
-                return
-            try:
-                amount = int(parts[3])
-            except ValueError:
-                return
-            if amount <= 0:
-                return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and amount > bal:
-                return
-            update_user_balance(message.author.id, -amount)
-            update_user_balance(target.id, amount)
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💸 Transferred **{amount:,}** Coins to {target.mention}!")
-
-    await bot.process_commands(message)
-
-
-# --- 11. SLASH COMMANDS ---
-
-@bot.tree.command(name="pxticketsetup", description="Setup aesthetic PC Panel & Android Injector ticket panel")
+# Official Setup Slash Command
+@bot.tree.command(name="pxticketsetup", description="Deploy the official ticket support panel")
 async def pxticketsetup(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
         await interaction.response.send_message("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
@@ -796,13 +629,13 @@ async def pxticketsetup(interaction: discord.Interaction):
 
     channel = interaction.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
     if not channel:
-        await interaction.response.send_message(f"❌ Ticket Channel ID `{TICKET_PANEL_CHANNEL_ID}` nahi mila!", ephemeral=True)
+        await interaction.response.send_message(f"❌ Ticket Channel `{TICKET_PANEL_CHANNEL_ID}` nahi mila!", ephemeral=True)
         return
 
     embed = get_ticket_panel_embed(interaction.guild)
     view = TicketSelectView()
     await channel.send(embed=embed, view=view)
-    await interaction.response.send_message(f"✅ Professional ticket panel sent to {channel.mention}!", ephemeral=True)
+    await interaction.response.send_message(f"✅ Aesthetic ticket panel successfully sent to {channel.mention}!", ephemeral=True)
 
 
 class OwOGroup(app_commands.Group):
@@ -878,7 +711,7 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
 
 
-# --- 12. Execution Start ---
+# --- 11. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
