@@ -13,7 +13,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Security, Invite & OwO Bot is online 24/7!"
+    return "PX Security, Invite & Multi-Identity Bot is online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -27,9 +27,9 @@ def keep_alive():
 # --- 2. Discord Bot Setup & Intents ---
 intents = discord.Intents.default()
 intents.members = True          # Join/Leave tracking
-intents.message_content = True  # OwO text commands (owo cash, owo cf, etc.)
+intents.message_content = True  # OwO commands
 intents.guilds = True           
-intents.invites = True          # Invite Tracker
+intents.invites = True          # Invite tracking
 intents.reactions = True        
 
 class SecurityBot(commands.Bot):
@@ -46,10 +46,10 @@ bot = SecurityBot()
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = [MY_USER_ID]
 
-WELCOME_CHANNEL_ID = 1525182000825237648       # Professional Welcome with Avatar & Links
-INVITE_LOG_CHANNEL_ID = 1548745613640859729    # Invite Tracker Log
-LEAVE_CHANNEL_ID = 1548745646717014029         # Leave Notification
-OWO_CHANNEL_ID = 1548770349351575632           # Dedicated OwO Mini-Game Channel
+WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
+INVITE_LOG_CHANNEL_ID = 1548745613640859729    # PX INVITER BOT
+LEAVE_CHANNEL_ID = 1548745646717014029         # PX LEAVE BOT
+OWO_CHANNEL_ID = 1548770349351575632           # PX OWO BOT
 
 CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
@@ -67,18 +67,50 @@ member_invited_by = {}
 active_giveaways = {}
 
 # OwO Economy Memory
-user_balances = {}          # user_id: int
-daily_cooldowns = {}        # user_id: datetime
+user_balances = {}          
+daily_cooldowns = {}        
+channel_webhooks = {}       # Cached webhooks for ultra-fast delivery
+
+
+# --- Helper: Dynamic Channel-Based Identity Sender ---
+async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None):
+    """Har channel ke hisaab se bot ka custom name switch karke message bhejta hai"""
+    if not channel:
+        return None
+
+    try:
+        webhook = channel_webhooks.get(channel.id)
+        if not webhook:
+            webhooks = await channel.webhooks()
+            webhook = discord.utils.get(webhooks, name="PX-Identity-Hook")
+            if not webhook:
+                webhook = await channel.create_webhook(name="PX-Identity-Hook")
+            channel_webhooks[channel.id] = webhook
+
+        avatar_url = bot.user.display_avatar.url if bot.user else None
+        
+        # Webhooks direct view pass support nahi karte, fallback logic for interactive views
+        if view:
+            return await channel.send(content=content, embed=embed, view=view)
+
+        return await webhook.send(
+            content=content,
+            embed=embed,
+            username=bot_name,
+            avatar_url=avatar_url,
+            wait=True
+        )
+    except Exception as e:
+        print(f"[IDENTITY FALLBACK ERROR in {channel.name}]: {e}", flush=True)
+        return await channel.send(content=content, embed=embed, view=view)
 
 
 def get_user_balance(user_id: int) -> int:
-    """Owner ke paas hamesha unlimited balance rahega"""
     if user_id == MY_USER_ID:
         return 999_999_999_999
-    return user_balances.get(user_id, 1000)  # Default 1000 starter bonus
+    return user_balances.get(user_id, 1000)
 
 def update_user_balance(user_id: int, amount: int):
-    """Coins add ya remove karne ke liye (Owner ka infinite hi rehta hai)"""
     if user_id == MY_USER_ID:
         return
     current = user_balances.get(user_id, 1000)
@@ -86,7 +118,6 @@ def update_user_balance(user_id: int, amount: int):
 
 
 async def take_anti_nuke_action(guild, executor, action_name):
-    """Attacker ko ban karega (Whitelist chhodkar)"""
     if executor.id == guild.owner_id or executor.id == bot.user.id or executor.id in WHITELIST_USERS:
         return
 
@@ -103,7 +134,134 @@ async def take_anti_nuke_action(guild, executor, action_name):
         print(f"[ANTI-NUKE ERROR] {e}", flush=True)
 
 
-# --- 3. Ready Event ---
+# --- 3. Interactive Mines Game View ---
+class MinesGameView(discord.ui.View):
+    def __init__(self, user: discord.User, bet: int):
+        super().__init__(timeout=90)
+        self.user = user
+        self.bet = bet
+        self.revealed_gems = 0
+        self.game_over = False
+
+        self.bomb_indexes = set(random.sample(range(9), 3))
+        self.multipliers = [1.3, 1.8, 2.5, 4.0, 6.5, 10.0]
+
+        for i in range(9):
+            row = i // 3
+            btn = discord.ui.Button(label="❓", style=discord.ButtonStyle.secondary, row=row, custom_id=f"mine_{i}")
+            btn.callback = self.make_callback(i)
+            self.add_item(btn)
+
+        self.cashout_btn = discord.ui.Button(label="💰 Cashout", style=discord.ButtonStyle.success, row=3, disabled=True)
+        self.cashout_btn.callback = self.cashout_callback
+        self.add_item(self.cashout_btn)
+
+    def current_profit(self) -> int:
+        if self.revealed_gems == 0:
+            return self.bet
+        mult = self.multipliers[min(self.revealed_gems - 1, len(self.multipliers) - 1)]
+        return int(self.bet * mult)
+
+    def make_callback(self, index: int):
+        async def button_callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user.id:
+                await interaction.response.send_message("❌ Yeh aapka game nahi hai! Shuru karne ke liye `owo mine <amount>` likhein.", ephemeral=True)
+                return
+
+            if self.game_over:
+                await interaction.response.defer()
+                return
+
+            target_btn = next((item for item in self.children if getattr(item, 'custom_id', None) == f"mine_{index}"), None)
+
+            if index in self.bomb_indexes:
+                self.game_over = True
+                update_user_balance(self.user.id, -self.bet)
+                new_bal = get_user_balance(self.user.id)
+                disp_bal = "∞" if self.user.id == MY_USER_ID else f"{new_bal:,}"
+
+                for i in range(9):
+                    b = next((item for item in self.children if getattr(item, 'custom_id', None) == f"mine_{i}"), None)
+                    if b:
+                        b.disabled = True
+                        if i in self.bomb_indexes:
+                            b.label = "💣"
+                            b.style = discord.ButtonStyle.danger
+                        else:
+                            b.label = "💎"
+                            b.style = discord.ButtonStyle.success
+
+                self.cashout_btn.disabled = True
+                await interaction.response.edit_message(
+                    content=f"💥 **BOOM!** {self.user.mention}, aapne bomb nikaal liya! Aap **{self.bet:,}** OwO Coins haar gaye. (Balance: **{disp_bal}**)",
+                    view=self
+                )
+                self.stop()
+            else:
+                self.revealed_gems += 1
+                target_btn.label = "💎"
+                target_btn.style = discord.ButtonStyle.success
+                target_btn.disabled = True
+
+                profit = self.current_profit()
+                self.cashout_btn.disabled = False
+                self.cashout_btn.label = f"💰 Cashout ({profit:,} Coins)"
+
+                if self.revealed_gems == 6:
+                    self.game_over = True
+                    winnings = int(self.bet * 10.0)
+                    update_user_balance(self.user.id, winnings - self.bet)
+                    new_bal = get_user_balance(self.user.id)
+                    disp_bal = "∞" if self.user.id == MY_USER_ID else f"{new_bal:,}"
+
+                    for item in self.children:
+                        item.disabled = True
+                    await interaction.response.edit_message(
+                        content=f"👑 **CLEARED THE FIELD!** {self.user.mention} ne sabhi 6 💎 dhoondh kar **{winnings:,}** OwO Coins jeet liye! (Balance: **{disp_bal}**)",
+                        view=self
+                    )
+                    self.stop()
+                else:
+                    await interaction.response.edit_message(
+                        content=f"💎 Safe! Current Value: **{profit:,}** Coins ({self.multipliers[self.revealed_gems - 1]}x) | 3 💣 bache hain!",
+                        view=self
+                    )
+        return button_callback
+
+    async def cashout_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ Yeh aapka game nahi hai!", ephemeral=True)
+            return
+
+        if self.game_over or self.revealed_gems == 0:
+            await interaction.response.defer()
+            return
+
+        self.game_over = True
+        profit = self.current_profit()
+        update_user_balance(self.user.id, profit - self.bet)
+        new_bal = get_user_balance(self.user.id)
+        disp_bal = "∞" if self.user.id == MY_USER_ID else f"{new_bal:,}"
+
+        for i in range(9):
+            b = next((item for item in self.children if getattr(item, 'custom_id', None) == f"mine_{i}"), None)
+            if b:
+                b.disabled = True
+                if i in self.bomb_indexes:
+                    b.label = "💣"
+                    b.style = discord.ButtonStyle.danger
+                elif b.label != "💎":
+                    b.label = "💎"
+
+        self.cashout_btn.disabled = True
+        await interaction.response.edit_message(
+            content=f"💰 **CASHOUT SUCCESSFUL!** {self.user.mention} ne **{profit:,}** OwO Coins secure kar liye! (Balance: **{disp_bal}**)",
+            view=self
+        )
+        self.stop()
+
+
+# --- 4. Ready Event ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -131,20 +289,20 @@ async def on_invite_delete(invite):
         del invites_cache[invite.guild.id][invite.code]
 
 
-# --- 4. Member Join Event ---
+# --- 5. Member Join Event ---
 @bot.event
 async def on_member_join(member):
     print(f"\n[JOIN EVENT] Member Joined: {member.name} ({member.id})", flush=True)
     guild = member.guild
 
-    # 1. Automatic Nickname Tag (PX | Name)
+    # 1. Nickname Tag (PX | Name)
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role:
                 if not member.display_name.upper().startswith("PX"):
                     new_nick = f"PX | {member.display_name}"[:32]
                     await member.edit(nick=new_nick, reason="Auto PX tag on join")
-                    print(f"[AUTO-NICK] Nick changed to {new_nick}", flush=True)
+                    print(f"[AUTO-NICK] Changed to {new_nick}", flush=True)
         except Exception as e:
             print(f"[AUTO-NICK ERROR] {e}", flush=True)
 
@@ -181,7 +339,7 @@ async def on_member_join(member):
     user_invites[inviter_id] = user_invites.get(inviter_id, 0) + 1
     total_invites = user_invites[inviter_id]
 
-    # A. Invite Channel
+    # A. Invite Log Channel -> "PX INVITER BOT"
     invite_channel = guild.get_channel(INVITE_LOG_CHANNEL_ID)
     if invite_channel:
         invite_log_text = (
@@ -192,12 +350,9 @@ async def on_member_join(member):
             f"> 📊 **Total Invites:** `{total_invites}`\n\n"
             f"*Have a great time here!* ✧"
         )
-        try:
-            await invite_channel.send(invite_log_text)
-        except Exception as e:
-            print(f"[INVITE LOG ERROR] {e}", flush=True)
+        await send_custom_channel_msg(invite_channel, "PX INVITER BOT", content=invite_log_text)
 
-    # B. Welcome Channel
+    # B. Welcome Channel -> "PX WELCOMER BOT"
     welcome_channel = guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
         guild_icon = guild.icon.url if guild.icon else None
@@ -225,10 +380,12 @@ async def on_member_join(member):
         embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
         embed.timestamp = datetime.utcnow()
 
-        try:
-            await welcome_channel.send(content=f"Welcome {member.mention}!", embed=embed)
-        except Exception as e:
-            print(f"[WELCOME ERROR] {e}", flush=True)
+        await send_custom_channel_msg(
+            welcome_channel,
+            "PX WELCOMER BOT",
+            content=f"Welcome {member.mention}!",
+            embed=embed
+        )
 
     # C. Direct Message (DM)
     try:
@@ -254,7 +411,7 @@ async def on_member_join(member):
         pass
 
 
-# --- 5. Member Leave Event ---
+# --- 6. Member Leave Event -> "PX LEAVE BOT" ---
 @bot.event
 async def on_member_remove(member):
     print(f"\n[LEAVE EVENT] Member Left: {member.name} ({member.id})", flush=True)
@@ -278,13 +435,10 @@ async def on_member_remove(member):
             f"> 🔗 **Invited By:** {inviter_mention}\n\n"
             f"*We hope to see you again!* 🥀"
         )
-        try:
-            await leave_channel.send(leave_text)
-        except Exception as e:
-            print(f"[LEAVE SEND ERROR] {e}", flush=True)
+        await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 6. Anti-Nuke Event Listeners ---
+# --- 7. Anti-Nuke Event Listeners ---
 @bot.event
 async def on_guild_channel_delete(channel):
     guild = channel.guild
@@ -314,7 +468,7 @@ async def on_guild_role_delete(role):
             await take_anti_nuke_action(guild, executor, "Role Deletions")
 
 
-# --- 7. Giveaway System & Tracking ---
+# --- 8. Giveaway Reaction Tracking ---
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.message_id in active_giveaways and str(payload.emoji) == "🎉":
@@ -346,8 +500,7 @@ async def on_raw_reaction_add(payload):
             print(f"[REACTION ERROR] {e}", flush=True)
 
 
-# --- 8. OWO MINI-GAME & ECONOMY SYSTEM (TEXT COMMANDS) ---
-# Users type: "owo cash", "owo daily", "owo cf 500 h", "owo s 100", "owo give @user 200"
+# --- 9. OWO MINI-GAMES -> "PX OWO BOT" ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -356,16 +509,13 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # Agar koi 'owo' likhe
     if lowered.startswith("owo") or lowered.startswith("px owo"):
-        # Sirf OwO channel me chalega
         if message.channel.id != OWO_CHANNEL_ID:
-            # Agar kisi aur channel me chalae to ignore ya delete kar sakte hain
             return
 
         parts = content.split()
         if len(parts) == 1:
-            await message.channel.send(f"**{message.author.name}**! OwO? What's this? (Try `owo cash`, `owo daily`, `owo cf <amount>`, `owo s <amount>`)")
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"**{message.author.name}**! OwO? What's this? (Try `owo cash`, `owo daily`, `owo cf <amount>`, `owo s <amount>`, `owo mine <amount>`)")
             return
 
         subcmd = parts[1].lower()
@@ -374,9 +524,9 @@ async def on_message(message):
         if subcmd in ["cash", "money", "bal", "balance"]:
             bal = get_user_balance(message.author.id)
             display_bal = "∞ (Unlimited)" if message.author.id == MY_USER_ID else f"{bal:,}"
-            await message.channel.send(f"👛 **{message.author.display_name}**'s Balance: **{display_bal}** OwO Coins")
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"👛 **{message.author.display_name}**'s Balance: **{display_bal}** OwO Coins")
 
-        # 2. Daily Coins
+        # 2. Daily
         elif subcmd in ["daily"]:
             now = datetime.utcnow()
             last_claim = daily_cooldowns.get(message.author.id)
@@ -384,7 +534,7 @@ async def on_message(message):
                 rem = timedelta(hours=24) - (now - last_claim)
                 hours, remainder = divmod(int(rem.total_seconds()), 3600)
                 minutes, _ = divmod(remainder, 60)
-                await message.channel.send(f"⏳ **{message.author.display_name}**, aapne aaj ka daily reward pehle hi le liya hai! Wapas aayein in `{hours}h {minutes}m`.")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"⏳ **{message.author.display_name}**, aapne aaj ka daily reward pehle hi le liya hai! Wapas aayein in `{hours}h {minutes}m`.")
                 return
 
             reward = random.randint(5000, 15000)
@@ -392,26 +542,52 @@ async def on_message(message):
             daily_cooldowns[message.author.id] = now
             bal = get_user_balance(message.author.id)
             display_bal = "∞ (Unlimited)" if message.author.id == MY_USER_ID else f"{bal:,}"
-            await message.channel.send(f"🎁 **{message.author.display_name}**, aapko **{reward:,}** OwO Coins mile! New Balance: **{display_bal}**")
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎁 **{message.author.display_name}**, aapko **{reward:,}** OwO Coins mile! New Balance: **{display_bal}**")
 
-        # 3. Coinflip (owo cf <amount> [h/t])
-        elif subcmd in ["cf", "coinflip"]:
+        # 3. Mines Game
+        elif subcmd in ["mine", "mines"]:
             if len(parts) < 3:
-                await message.channel.send("❌ Usage: `owo cf <amount> [h/t]` (Example: `owo cf 500 h`)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo mine <amount>` (Example: `owo mine 500`)")
                 return
             try:
                 bet = int(parts[2])
             except ValueError:
-                await message.channel.send("❌ Kripya valid coin amount dalein!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Kripya valid amount dalein!")
                 return
 
             if bet <= 0:
-                await message.channel.send("❌ Shart lagane ke liye amount 0 se zyada hona chahiye!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Bet amount 0 se zyada hona chahiye!")
                 return
 
             bal = get_user_balance(message.author.id)
             if message.author.id != MY_USER_ID and bet > bal:
-                await message.channel.send(f"❌ **{message.author.display_name}**, aapke paas itne coins nahi hain! Current Balance: `{bal:,}`")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient balance! Aapke paas sirf `{bal:,}` coins hain.")
+                return
+
+            view = MinesGameView(message.author, bet)
+            await message.channel.send(
+                content=f"💣 **MINES GAME STARTED** | Bet: **{bet:,}** OwO Coins\nGrid me **3 Hidden Bombs (💣)** hain. Diamonds (💎) dhoondhein aur jab chahe Cashout karein!",
+                view=view
+            )
+
+        # 4. Coinflip
+        elif subcmd in ["cf", "coinflip"]:
+            if len(parts) < 3:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo cf <amount> [h/t]`")
+                return
+            try:
+                bet = int(parts[2])
+            except ValueError:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Valid coin amount dalein!")
+                return
+
+            if bet <= 0:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Amount 0 se zyada hona chahiye!")
+                return
+
+            bal = get_user_balance(message.author.id)
+            if message.author.id != MY_USER_ID and bet > bal:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient coins! Current Balance: `{bal:,}`")
                 return
 
             choice = parts[3].lower()[0] if len(parts) >= 4 else "h"
@@ -422,89 +598,87 @@ async def on_message(message):
                 update_user_balance(message.author.id, bet)
                 new_bal = get_user_balance(message.author.id)
                 display_bal = "∞" if message.author.id == MY_USER_ID else f"{new_bal:,}"
-                await message.channel.send(f"🪙 The coin spins and lands on **{result}**! 🎉 **{message.author.display_name}** won **{bet:,}** OwO Coins! (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 The coin lands on **{result}**! 🎉 **{message.author.display_name}** won **{bet:,}** OwO Coins! (Balance: **{display_bal}**)")
             else:
                 update_user_balance(message.author.id, -bet)
                 new_bal = get_user_balance(message.author.id)
                 display_bal = "∞" if message.author.id == MY_USER_ID else f"{new_bal:,}"
-                await message.channel.send(f"🪙 The coin spins and lands on **{result}**! 💀 **{message.author.display_name}** lost **{bet:,}** OwO Coins. (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 The coin lands on **{result}**! 💀 **{message.author.display_name}** lost **{bet:,}** OwO Coins. (Balance: **{display_bal}**)")
 
-        # 4. Slots (owo s <amount>)
+        # 5. Slots
         elif subcmd in ["s", "slot", "slots"]:
             if len(parts) < 3:
-                await message.channel.send("❌ Usage: `owo s <amount>` (Example: `owo s 500`)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo s <amount>`")
                 return
             try:
                 bet = int(parts[2])
             except ValueError:
-                await message.channel.send("❌ Valid amount dalein!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Valid amount dalein!")
                 return
 
             if bet <= 0:
-                await message.channel.send("❌ Amount 0 se zyada hona chahiye!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Amount 0 se zyada hona chahiye!")
                 return
 
             bal = get_user_balance(message.author.id)
             if message.author.id != MY_USER_ID and bet > bal:
-                await message.channel.send(f"❌ Insufficient balance! Aapke paas sirf `{bal:,}` coins hain.")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Insufficient balance! (Aapke paas: `{bal:,}`)")
                 return
 
             icons = ["🍒", "🍋", "🍇", "💎", "7️⃣"]
             r1, r2, r3 = random.choice(icons), random.choice(icons), random.choice(icons)
 
             if r1 == r2 == r3:
-                multiplier = 5 if r1 == "7️⃣" or r1 == "💎" else 3
-                winnings = bet * multiplier
+                winnings = bet * 4
                 update_user_balance(message.author.id, winnings)
                 new_bal = get_user_balance(message.author.id)
                 display_bal = "∞" if message.author.id == MY_USER_ID else f"{new_bal:,}"
-                await message.channel.send(f"🎰 [ {r1} | {r2} | {r3} ]\n🔥 **JACKPOT!** **{message.author.display_name}** won **{winnings:,}** OwO Coins! (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n🔥 **JACKPOT!** Won **{winnings:,}** OwO Coins! (Balance: **{display_bal}**)")
             elif r1 == r2 or r2 == r3 or r1 == r3:
                 winnings = int(bet * 1.5)
                 update_user_balance(message.author.id, winnings - bet)
                 new_bal = get_user_balance(message.author.id)
                 display_bal = "∞" if message.author.id == MY_USER_ID else f"{new_bal:,}"
-                await message.channel.send(f"🎰 [ {r1} | {r2} | {r3} ]\n✨ Small Win! **{message.author.display_name}** won **{winnings:,}** coins! (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n✨ Small Win! Won **{winnings:,}** OwO Coins! (Balance: **{display_bal}**)")
             else:
                 update_user_balance(message.author.id, -bet)
                 new_bal = get_user_balance(message.author.id)
                 display_bal = "∞" if message.author.id == MY_USER_ID else f"{new_bal:,}"
-                await message.channel.send(f"🎰 [ {r1} | {r2} | {r3} ]\n💔 Better luck next time! Lost **{bet:,}** coins. (Balance: **{display_bal}**)")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n💔 Lost **{bet:,}** coins. (Balance: **{display_bal}**)")
 
-        # 5. Give / Pay Coins (owo give @user <amount>)
+        # 6. Give Coins
         elif subcmd in ["give", "pay", "send"]:
             if len(message.mentions) == 0 or len(parts) < 4:
-                await message.channel.send("❌ Usage: `owo give @user <amount>`")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo give @user <amount>`")
                 return
             target = message.mentions[0]
             if target.id == message.author.id:
-                await message.channel.send("❌ Aap khud ko coins nahi bhej sakte!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Khud ko coins nahi bhej sakte!")
                 return
             try:
                 amount = int(parts[3])
             except ValueError:
-                await message.channel.send("❌ Valid amount enter karein!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Valid amount dalein!")
                 return
 
             if amount <= 0:
-                await message.channel.send("❌ Amount 1 ya usse zyada hona chahiye!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Amount 1 ya zyada hona chahiye!")
                 return
 
             bal = get_user_balance(message.author.id)
             if message.author.id != MY_USER_ID and amount > bal:
-                await message.channel.send("❌ Aapke paas itne coins nahi hain!")
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Insufficient balance!")
                 return
 
             update_user_balance(message.author.id, -amount)
             update_user_balance(target.id, amount)
-            await message.channel.send(f"💸 **{message.author.display_name}** transferred **{amount:,}** OwO Coins to {target.mention}!")
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💸 **{message.author.display_name}** transferred **{amount:,}** OwO Coins to {target.mention}!")
 
     await bot.process_commands(message)
 
 
-# --- 9. SLASH COMMANDS ---
+# --- 10. SLASH COMMANDS ---
 
-# 1. OwO Slash Command Suite
 class OwOGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="owo", description="OwO Mini-Game & Economy Commands")
@@ -541,8 +715,29 @@ async def owo_daily(interaction: discord.Interaction):
     display_bal = "∞ (Unlimited)" if interaction.user.id == MY_USER_ID else f"{bal:,}"
     await interaction.response.send_message(f"🎁 **{interaction.user.display_name}**, aapko **{reward:,}** OwO Coins mile! Total Balance: **{display_bal}**")
 
+@owo_group.command(name="mine", description="Play 3x3 interactive Mines game")
+@app_commands.describe(amount="Kitne coins ki shart lagani hai")
+async def owo_mine_slash(interaction: discord.Interaction, amount: int):
+    if interaction.channel_id != OWO_CHANNEL_ID:
+        await interaction.response.send_message(f"❌ Sirf <#{OWO_CHANNEL_ID}> channel me khele!", ephemeral=True)
+        return
+    if amount <= 0:
+        await interaction.response.send_message("❌ Amount 0 se zyada hona chahiye!", ephemeral=True)
+        return
+
+    bal = get_user_balance(interaction.user.id)
+    if interaction.user.id != MY_USER_ID and amount > bal:
+        await interaction.response.send_message(f"❌ Insufficient balance! Aapke paas sirf `{bal:,}` coins hain.", ephemeral=True)
+        return
+
+    view = MinesGameView(interaction.user, amount)
+    await interaction.response.send_message(
+        content=f"💣 **MINES GAME STARTED** | Bet: **{amount:,}** OwO Coins\nGrid me **3 Hidden Bombs (💣)** hain. 💎 dhoondhein aur Cashout karein!",
+        view=view
+    )
+
 @owo_group.command(name="coinflip", description="Coinflip shart lagayein")
-@app_commands.describe(amount="Kitne coins ki shart lagani hai", side="Heads ya Tails")
+@app_commands.describe(amount="Bet amount", side="Heads ya Tails")
 @app_commands.choices(side=[
     app_commands.Choice(name="Heads", value="Heads"),
     app_commands.Choice(name="Tails", value="Tails")
@@ -557,7 +752,7 @@ async def owo_coinflip(interaction: discord.Interaction, amount: int, side: str)
 
     bal = get_user_balance(interaction.user.id)
     if interaction.user.id != MY_USER_ID and amount > bal:
-        await interaction.response.send_message(f"❌ Insufficient balance! Aapke paas sirf `{bal:,}` coins hain.", ephemeral=True)
+        await interaction.response.send_message(f"❌ Insufficient balance! (Aapke paas: `{bal:,}`)", ephemeral=True)
         return
 
     result = random.choice(["Heads", "Tails"])
@@ -565,12 +760,12 @@ async def owo_coinflip(interaction: discord.Interaction, amount: int, side: str)
         update_user_balance(interaction.user.id, amount)
         new_bal = get_user_balance(interaction.user.id)
         display_bal = "∞" if interaction.user.id == MY_USER_ID else f"{new_bal:,}"
-        await interaction.response.send_message(f"🪙 The coin lands on **{result}**! 🎉 **{interaction.user.display_name}** won **{amount:,}** OwO Coins! (Balance: **{display_bal}**)")
+        await interaction.response.send_message(f"🪙 The coin lands on **{result}**! 🎉 Won **{amount:,}** OwO Coins! (Balance: **{display_bal}**)")
     else:
         update_user_balance(interaction.user.id, -amount)
         new_bal = get_user_balance(interaction.user.id)
         display_bal = "∞" if interaction.user.id == MY_USER_ID else f"{new_bal:,}"
-        await interaction.response.send_message(f"🪙 The coin lands on **{result}**! 💀 **{interaction.user.display_name}** lost **{amount:,}** OwO Coins. (Balance: **{display_bal}**)")
+        await interaction.response.send_message(f"🪙 The coin lands on **{result}**! 💀 Lost **{amount:,}** OwO Coins. (Balance: **{display_bal}**)")
 
 @owo_group.command(name="slots", description="Slot machine spin karein")
 @app_commands.describe(amount="Bet amount")
@@ -739,7 +934,7 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
 
 
-# --- 10. Execution Start ---
+# --- 11. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
