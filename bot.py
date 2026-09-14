@@ -41,8 +41,12 @@ bot = SecurityBot()
 MY_USER_ID = 1525179499602509977
 WHITELIST_USERS = [MY_USER_ID]
 
-WELCOME_CHANNEL_ID = 1548745613640859729
+# Updated Welcome Channel ID
+WELCOME_CHANNEL_ID = 1525182000825237648
 LEAVE_CHANNEL_ID = 1548745646717014029
+
+CHAT_CHANNEL_ID = 1536673179010080860
+RULE_CHANNEL_ID = 1525203386025119807
 
 # Anti-Nuke Settings (5 sec me 2 se zyada deletion par direct ban)
 channel_deletions = {}
@@ -112,7 +116,6 @@ async def on_guild_role_delete(role):
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
     
-    # Sabhi servers ke invites cache karein
     for guild in bot.guilds:
         try:
             guild_invites = await guild.invites()
@@ -134,13 +137,13 @@ async def on_invite_delete(invite):
         del invites_cache[invite.guild.id][invite.code]
 
 
-# --- 5. Member Join Event (Welcome + Fallback to Your ID) ---
+# --- 5. Member Join Event (Professional Welcome Card with Avatar + Channels) ---
 @bot.event
 async def on_member_join(member):
     guild = member.guild
     inviter = None
     
-    # Check kis invite se aaya
+    # Check kis invite link se user ne join kiya
     try:
         current_invites = await guild.invites()
         old_invites = invites_cache.get(guild.id, {})
@@ -158,53 +161,70 @@ async def on_member_join(member):
     except Exception as e:
         print(f"Error checking invites: {e}")
 
-    # Agar inviter mil gaya to wo, warna default aapki ID
+    # Fallback to your ID agar unknown/vanity URL ho
     if inviter and not inviter.bot:
         inviter_id = inviter.id
-        inviter_display = inviter.name
+        inviter_display = inviter.mention
     else:
         inviter_id = MY_USER_ID
-        owner_member = guild.get_member(MY_USER_ID)
-        inviter_display = owner_member.name if owner_member else "PERSIST-X"
+        inviter_display = f"<@{MY_USER_ID}>"
 
-    # Track entry & update counter
+    # Total invites track karein
     member_invited_by[member.id] = inviter_id
     user_invites[inviter_id] = user_invites.get(inviter_id, 0) + 1
     total_invites = user_invites[inviter_id]
 
-    # 1. Welcome Channel Message
+    # 1. Professional Welcome Embed in Welcome Channel
     welcome_channel = guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
-        welcome_msg = (
-            f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-            f"  ✦ 𝐖𝐞𝐥𝐜𝐨𝐦𝐞 {member.mention} ✦\n"
-            f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n\n"
-            f"> 📨 **Invited By:** {inviter_display}\n"
-            f"> 📊 **Total Invites:** `{total_invites}`\n\n"
-            f"*Have a great time here!* ✧"
-        )
-        try:
-            await welcome_channel.send(welcome_msg)
-        except Exception as e:
-            print(f"Error sending welcome message: {e}")
+        guild_icon = guild.icon.url if guild.icon else None
+        user_avatar = member.display_avatar.url
 
-    # 2. Member ko Professional DM
+        embed = discord.Embed(
+            title="✦  WELCOME TO PX PANEL  ✦",
+            description=(
+                f"Hey {member.mention}, welcome to **{guild.name}**!\n"
+                f"We're glad to have you with us in **PX FAMILY**.\n\n"
+                f"**Member Information**\n"
+                f"• **Username:** `{member.name}`\n"
+                f"• **Invited By:** {inviter_display}\n"
+                f"• **Total Invites:** `{total_invites}`\n"
+                f"• **Member Count:** `#{guild.member_count}`\n\n"
+                f"**Important Channels**\n"
+                f"📜 **Rules:** <#{RULE_CHANNEL_ID}>\n"
+                f"💬 **General Chat:** <#{CHAT_CHANNEL_ID}>\n\n"
+                f"*Please read the rules and have a wonderful time!* ✨"
+            ),
+            color=0xFEE75C
+        )
+        embed.set_author(name="New Member Joined!", icon_url=guild_icon)
+        embed.set_thumbnail(url=user_avatar)
+        embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
+        embed.timestamp = datetime.utcnow()
+
+        try:
+            await welcome_channel.send(content=f"Welcome {member.mention}!", embed=embed)
+        except Exception as e:
+            print(f"Error sending welcome embed: {e}")
+
+    # 2. Member ko Professional Direct Message (DM)
     try:
         dm_embed = discord.Embed(
             title="WELCOME TO PX PANEL COMMUNITY",
             description=(
-                f"Hello {member.name}, welcome to **PX PANEL**! 🌟\n\n"
-                f"> We are thrilled to have you here. Explore our community, participate in exclusive events & giveaways, and enjoy your time.\n\n"
-                f"📌 **Quick Guidance:**\n"
-                f"• Check out our server rules.\n"
-                f"• Head over to giveaways to claim rewards.\n"
-                f"• Need help? Create a ticket or ping our team.\n\n"
-                f"*Hosted & Powered by Persistx*"
+                f"Hello **{member.name}**, welcome to **PX PANEL**! 🌟\n\n"
+                f"> We are thrilled to have you here. Explore our server, participate in exclusive giveaways, and enjoy your time.\n\n"
+                f"📌 **Quick Links:**\n"
+                f"• 📜 Server Rules: <#{RULE_CHANNEL_ID}>\n"
+                f"• 💬 Chit-Chat: <#{CHAT_CHANNEL_ID}>\n"
+                f"• Need help? Reach out to our moderators or open a ticket.\n\n"
+                f"*Powered & Sponsored by Persistx*"
             ),
             color=0xFEE75C
         )
         guild_icon = guild.icon.url if guild.icon else None
         dm_embed.set_author(name="PX PANEL • OFFICIAL SERVER", icon_url=guild_icon)
+        dm_embed.set_thumbnail(url=member.display_avatar.url)
         dm_embed.set_footer(text="PX PANEL Community • PX FAMILY 💖", icon_url=guild_icon)
         await member.send(embed=dm_embed)
     except Exception as e:
