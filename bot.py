@@ -26,7 +26,7 @@ def keep_alive():
     t.start()
 
 
-# --- 2. Intents & Setup ---
+# --- 2. Intents & Core Setup ---
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -55,15 +55,15 @@ RULE_CHANNEL_ID = 1525203386025119807
 TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
 TICKET_CATEGORY_ID = 1525181999646507118       
 
-# Ticket Logs
+# Ticket Notification Logs
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Categories to scan
+# Categories to scan for dropdown
 PC_CATEGORY_ID = 1525182001097998339
 ANDROID_CATEGORY_ID = 1525182001097998345
 
-# PX Client Channel for Instant QR Trigger
+# PX Client Channel / Support Channel
 PX_CLIENT_CHANNEL_ID = 1549535112620679251
 
 # 24/7 Voice Channel
@@ -442,6 +442,7 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
+        # Channel name is only the clean username (bina kisi ticket number ke)
         clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:20]
         channel_name = clean_name
 
@@ -854,7 +855,9 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
-        if channel.category_id == TICKET_CATEGORY_ID:
+        # Ignored if inside any client or ticket related channel
+        if (hasattr(channel, 'category') and channel.category and 
+            ("ticket" in channel.category.name.lower() or "client" in channel.category.name.lower())):
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
 
@@ -1041,44 +1044,54 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 15. Message Event (Auto-QR in Tickets & PX Client) ---
+# --- 15. Message Event (Fixed QR for ALL Ticket & Client Channels) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
         return
 
-    if hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID:
-        inactivity_warned.discard(message.channel.id)
-
     content = message.content.strip()
     lowered = content.lower()
 
-    # AUTO-QR TRIGGER (Active in Tickets AND PX Client Channel)
-    is_in_qr_allowed = (
+    # --- QR ALLOWED CHECK (TICKET SYSTEM + PX CLIENT + TOPIC MATCH) ---
+    is_ticket_by_topic = bool(message.channel.topic and "Ticket #" in message.channel.topic)
+    
+    cat_name = message.channel.category.name.lower() if message.channel.category else ""
+    is_in_allowed_category = (
         (hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID)
-        or message.channel.id == PX_CLIENT_CHANNEL_ID
+        or "client" in cat_name 
+        or "ticket" in cat_name
     )
+    is_client_channel = (message.channel.id == PX_CLIENT_CHANNEL_ID)
 
-    if is_in_qr_allowed and lowered in ["qr", "send qr", "!qr", "qr code", "payment qr", "scanner"]:
-        qr_embed = discord.Embed(
-            title="✦  PERSISTX OFFICIAL PAYMENT QR  ✦",
-            description=(
-                f"Hey {message.author.mention}, here is the official QR and Payment Details:\n\n"
-                f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-                f"  💳 **PAYMENT INFORMATION**\n"
-                f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
-                f"• **BINANCE PAY ID:** `Releasing Soon` (NAME: `PERSISTX`)\n"
-                f"• **UPI / QR SCAN:** *Scan the official QR below to pay.*\n\n"
-                f"📌 *Payment complete karne ke baad screenshot yahan send karein!*"
-            ),
-            color=0xED4245
-        )
-        qr_embed.set_image(url=QR_IMAGE_URL)
-        qr_embed.set_author(name="PX TICKET BOT", icon_url=message.guild.icon.url if message.guild.icon else None)
-        qr_embed.set_footer(text="PX SECURE PAYMENT SYSTEM © 2026", icon_url=message.guild.icon.url if message.guild.icon else None)
-        qr_embed.timestamp = datetime.utcnow()
-        await send_custom_channel_msg(message.channel, "PX TICKET BOT", embed=qr_embed)
-        return
+    # Agar inme se koi bhi match kare, channel me QR allowed hoga
+    if is_ticket_by_topic or is_in_allowed_category or is_client_channel:
+        inactivity_warned.discard(message.channel.id)
+
+        qr_triggers = ["qr", "!qr", "/qr", "qr code", "send qr", "scanner", "payment qr", "upi qr", "qr bhejo", "payment"]
+        words = lowered.split()
+
+        if lowered in qr_triggers or any(trigger in words for trigger in ["qr", "!qr", "/qr", "scanner"]):
+            qr_embed = discord.Embed(
+                title="✦  PERSISTX OFFICIAL PAYMENT QR  ✦",
+                description=(
+                    f"Hey {message.author.mention}, here is the official QR and Payment Details:\n\n"
+                    f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
+                    f"  💳 **PAYMENT INFORMATION**\n"
+                    f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
+                    f"• **BINANCE PAY ID:** `Releasing Soon` (NAME: `PERSISTX`)\n"
+                    f"• **UPI / QR SCAN:** *Scan the official QR below to pay.*\n\n"
+                    f"📌 *Payment complete karne ke baad screenshot yahan send karein!*"
+                ),
+                color=0xED4245
+            )
+            qr_embed.set_image(url=QR_IMAGE_URL)
+            qr_embed.set_author(name="PX TICKET BOT", icon_url=message.guild.icon.url if message.guild.icon else None)
+            qr_embed.set_footer(text="PX SECURE PAYMENT SYSTEM © 2026", icon_url=message.guild.icon.url if message.guild.icon else None)
+            qr_embed.timestamp = datetime.utcnow()
+            
+            await send_custom_channel_msg(message.channel, "PX TICKET BOT", embed=qr_embed)
+            return
 
     # Text Setup Fallback
     if lowered in ["!pxticketsetup", "!ticketsetup", "/pxticketsetup"]:
@@ -1603,7 +1616,7 @@ async def help_command(interaction: discord.Interaction):
             "**Store & Operations**\n"
             "• `/pxticketsetup` — Refresh & post dynamic product tickets\n"
             "• `/giveaway` — Host a verified clean giveaway\n"
-            "• `qr` — Auto-dispenses payment scanner (Works in Tickets & <#1549535112620679251>)\n\n"
+            "• `qr` — Auto-dispenses payment scanner (Works in Tickets & Client Channels)\n\n"
             "**Music & Voice (24/7 in <#{PUBLIC_VC_ID}>)**\n"
             "• `/joinvc` — Force-join bot to 24/7 Public VC\n"
             "• `/play <query>` — Play YouTube/Spotify track title or URL\n"
@@ -1629,7 +1642,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 18. Start ---
+# --- 18. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
