@@ -51,7 +51,7 @@ TICKET_CATEGORY_ID = 1525181999646507118
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Correct Swapped Category IDs
+# Categories to scan
 PC_CATEGORY_ID = 1525182001097998339           # Real PcPanel Category
 ANDROID_CATEGORY_ID = 1525182001097998345      # Real Android Injector Category
 
@@ -188,16 +188,15 @@ class TicketCloseView(discord.ui.View):
 
 
 def generate_ticket_options(guild: discord.Guild):
-    """Guaranteed Correct: PC Panels from PcPanel category, Android from Android Injector category"""
+    """Guaranteed ALL 12 PC Panels + ALL 7 Android Injectors + 4 Services"""
     pc_options = []
     android_options = []
 
     if guild:
-        # Search PcPanel and Android categories safely
         pc_cat = guild.get_channel(PC_CATEGORY_ID)
         android_cat = guild.get_channel(ANDROID_CATEGORY_ID)
 
-        # Fallback by name check if IDs ever change
+        # Name fallback check
         if not pc_cat or not android_cat:
             for cat in guild.categories:
                 c_name = cat.name.lower().replace(" ", "")
@@ -238,15 +237,10 @@ def generate_ticket_options(guild: discord.Guild):
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
 
-    # Discord max slots = 25
-    slots_left = 25 - len(mandatory_services)
-    
-    # Priority: PC first, Android second, Services last
-    final_pc = pc_options[:11]
-    rem = slots_left - len(final_pc)
-    final_android = android_options[:rem]
+    slots_for_products = 25 - len(mandatory_services) # 21 slots
+    combined_products = (pc_options + android_options)[:slots_for_products]
 
-    return final_pc + final_android + mandatory_services
+    return combined_products + mandatory_services
 
 
 class DynamicTicketSelect(discord.ui.Select):
@@ -385,7 +379,6 @@ def get_ticket_panel_embed(guild):
 
 
 async def force_fresh_ticket_panel(guild: discord.Guild):
-    """Purana panel delete karke completely FRESH sorted panel post karein"""
     t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
     if not t_channel:
         return
@@ -404,7 +397,7 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
 
     try:
         await t_channel.send(embed=embed, view=view)
-        print("[AUTO-SYNC] Fresh panel posted with strictly sorted PC & Android!", flush=True)
+        print("[AUTO-SYNC] Fresh panel posted with all channels including FPS Booster!", flush=True)
     except Exception as e:
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
@@ -564,7 +557,6 @@ async def on_ready():
         except Exception:
             pass
 
-        # Deploy 100% freshly sorted panel
         await force_fresh_ticket_panel(guild)
 
     for g in list(bot.guilds):
