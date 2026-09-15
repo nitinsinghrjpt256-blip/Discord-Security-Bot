@@ -38,7 +38,6 @@ intents.voice_states = True
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977
 
-# Roles
 AUTO_ROLE_IDS = [
     1525217661691236483,  # Family Role
     1536661490260770926   # PC Community Role
@@ -779,7 +778,7 @@ async def ensure_voice_connected():
 
     voice_client = guild.voice_client
     try:
-        if not voice_client:
+        if not voice_client or not voice_client.is_connected():
             await vc_channel.connect(reconnect=True, self_deaf=True)
             print("[VOICE 24/7] Connected to Public VC!", flush=True)
         elif voice_client.channel.id != PUBLIC_VC_ID:
@@ -1228,18 +1227,31 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 16. Music Engine Helpers ---
+# --- 16. Optimized Music Engine Helpers ---
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
+    'extractaudio': True,
+    'audioformat': 'mp3',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
     'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
     'quiet': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0'
+    'no_warnings': True,
+    'default_search': 'ytsearch',
+    'source_address': '0.0.0.0',
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'ios']
+        }
+    }
 }
 
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
+    'options': '-vn -filter:a "volume=0.9"'
 }
 
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
@@ -1356,25 +1368,32 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
 
 # --- MUSIC SLASH COMMANDS ---
 @bot.tree.command(name="play", description="Play audio from YouTube, Spotify title, or direct link in 24/7 VC")
-@app_commands.describe(query="Song name, YouTube URL, or Spotify song title")
+@app_commands.describe(query="Song name or link")
 async def play(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
     guild = interaction.guild
 
+    vc_channel = guild.get_channel(PUBLIC_VC_ID)
     voice_client = guild.voice_client
+
     if not voice_client or not voice_client.is_connected():
-        vc_channel = guild.get_channel(PUBLIC_VC_ID)
         if vc_channel:
             voice_client = await vc_channel.connect(reconnect=True, self_deaf=True)
+        else:
+            await interaction.followup.send("❌ Public VC channel nahi mila!")
+            return
 
     try:
-        data = await asyncio.to_thread(lambda: ytdl.extract_info(query, download=False))
+        # Run extractor in non-blocking thread
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False))
+        
         if 'entries' in data:
             data = data['entries'][0]
 
         track_url = data['url']
         track_title = data.get('title', 'Unknown Track')
-        track_duration = str(timedelta(seconds=data.get('duration', 0)))
+        track_duration = str(timedelta(seconds=data.get('duration', 0))) if data.get('duration') else "Live / Unknown"
 
         song_info = {
             'title': track_title,
@@ -1413,13 +1432,12 @@ async def play(interaction: discord.Interaction, query: str):
             embed.set_footer(text="PERSISTX LUXURY AUDIO SUITE © 2026")
             await interaction.followup.send(embed=embed)
     except Exception as e:
-        await interaction.followup.send(f"❌ Error loading track: `{e}`")
+        await interaction.followup.send(f"❌ Error loading track: `{str(e)[:150]}`")
 
 
 @bot.tree.command(name="skip", description="Skip currently playing track")
 async def skip(interaction: discord.Interaction):
-    guild = interaction.guild
-    voice_client = guild.voice_client
+    voice_client = interaction.guild.voice_client
     if voice_client and voice_client.is_playing():
         voice_client.stop()
         await interaction.response.send_message("⏭️ Track skipped!")
@@ -1427,7 +1445,7 @@ async def skip(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Koi track play nahi ho raha hai.", ephemeral=True)
 
 
-@bot.tree.command(name="pause", description="Pause the current song")
+@bot.tree.command(name="pause", description="Pause current song")
 async def pause(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
     if voice_client and voice_client.is_playing():
