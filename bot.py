@@ -142,7 +142,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 6. Aesthetic Ticket System & Dynamic Generator ---
+# --- 6. Aesthetic Ticket System & Ordered Generator ---
 class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -158,44 +158,64 @@ class TicketCloseView(discord.ui.View):
 
 
 def generate_ticket_options(guild: discord.Guild):
-    """Channels from Image 2 & 3 categories + Mandatory Custom & Support options"""
-    options = []
-    
-    # 1. Scrape channels from both categories
+    """Pehle PC Panels, fir Android Injectors, aur aakhiri me baaki options"""
+    pc_options = []
+    android_options = []
+
+    android_keywords = ["APK", "MOD", "INJECTOR", "ROOT", "DRIP", "PATO", "HAXXCKER", "NINE-X", "BR-MOD"]
+
     if guild:
         for cat_id in SYNC_CATEGORY_IDS:
             cat = guild.get_channel(cat_id)
             if cat and isinstance(cat, discord.CategoryChannel):
                 for ch in cat.text_channels:
-                    # Clean clean display title
                     clean_name = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().upper()
-                    if clean_name:
-                        emoji = "📱" if "APK" in clean_name or "MOD" in clean_name or "INJECTOR" in clean_name else "💻"
-                        options.append(
+                    raw_upper = ch.name.upper()
+
+                    is_android = any(k in raw_upper or k in clean_name for k in android_keywords)
+
+                    if is_android:
+                        android_options.append(
                             discord.SelectOption(
-                                label=clean_name[:100],
+                                label=f"ANDROID • {clean_name}"[:100],
                                 description=f"Instant purchase & key for #{ch.name}"[:100],
-                                emoji=emoji
+                                emoji="📱"
+                            )
+                        )
+                    else:
+                        pc_options.append(
+                            discord.SelectOption(
+                                label=f"PC PANEL • {clean_name}"[:100],
+                                description=f"Instant purchase & key for #{ch.name}"[:100],
+                                emoji="💻"
                             )
                         )
 
-    # 2. Mandatory Core Features
-    mandatory_options = [
+    # Mandatory Utilities / Other Options
+    other_options = [
         discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
         discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
         discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
-    
-    # Discord limit is 25 items
-    combined = options[:21] + mandatory_options
-    return combined[:25]
+
+    # Discord maximum allowed select options is 25
+    available_slots = 25 - len(other_options)
+    half_slots = available_slots // 2
+
+    # Balance options between PC and Android if list exceeds limit
+    selected_pc = pc_options[:half_slots]
+    selected_android = android_options[:(available_slots - len(selected_pc))]
+
+    # Order: 1. PC Panels -> 2. Android Injectors -> 3. Others
+    ordered_options = selected_pc + selected_android + other_options
+    return ordered_options[:25]
 
 
 class DynamicTicketSelect(discord.ui.Select):
     def __init__(self, options):
         super().__init__(
-            placeholder="Select Panel, Injector, or Support... 🛍️",
+            placeholder="Select PC Panel, Android Injector, or Support... 🛍️",
             min_values=1,
             max_values=1,
             options=options,
@@ -296,7 +316,6 @@ def get_ticket_panel_embed(guild):
 
 
 async def update_ticket_panel(guild: discord.Guild):
-    """Sync dropdown options if channels in either category change"""
     global panel_message_id
     t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
     if not t_channel:
@@ -311,20 +330,18 @@ async def update_ticket_panel(guild: discord.Guild):
             try:
                 msg = await t_channel.fetch_message(panel_message_id)
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Panel updated dynamically with new channels!", flush=True)
+                print("[AUTO-SYNC] Panel updated dynamically with ordered options!", flush=True)
                 return
             except Exception:
                 pass
 
-        # If message not saved in memory, find the last posted bot panel
         async for msg in t_channel.history(limit=10):
             if msg.author.id == bot.user.id and len(msg.embeds) > 0:
                 panel_message_id = msg.id
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Panel message edited with fresh options!", flush=True)
+                print("[AUTO-SYNC] Panel message refreshed with ordered options!", flush=True)
                 return
 
-        # If not found at all, send a fresh one
         new_msg = await t_channel.send(embed=embed, view=view)
         panel_message_id = new_msg.id
         print("[AUTO-SYNC] Fresh panel posted!", flush=True)
@@ -487,7 +504,6 @@ async def on_ready():
         except Exception:
             pass
 
-        # Auto-update/post panel on start
         await update_ticket_panel(guild)
 
     for g in list(bot.guilds):
@@ -499,7 +515,6 @@ async def on_ready():
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
-    # Agar in dono categories me naya channel bana, panel auto update karein
     if channel.category_id in SYNC_CATEGORY_IDS:
         await asyncio.sleep(1)
         await update_ticket_panel(channel.guild)
@@ -510,13 +525,11 @@ async def on_guild_channel_delete(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
     
-    # Agar channel product category se tha, dropdown se turant hatayein
     if channel.category_id in SYNC_CATEGORY_IDS:
         await asyncio.sleep(1)
         await update_ticket_panel(channel.guild)
         return
 
-    # Anti-Nuke rule
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
@@ -529,7 +542,6 @@ async def on_guild_channel_delete(channel):
 async def on_guild_channel_update(before, after):
     if after.guild.id != MY_SERVER_ID:
         return
-    # Channel rename hone par panel dropdown update
     if after.category_id in SYNC_CATEGORY_IDS and before.name != after.name:
         await update_ticket_panel(after.guild)
 
@@ -560,7 +572,6 @@ async def on_member_join(member):
                 pass
             return
 
-    # Auto PX Tag for new members
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
@@ -568,7 +579,6 @@ async def on_member_join(member):
         except Exception:
             pass
 
-    # Invite Tracking Logic
     inviter = None
     try:
         current_invites = await guild.invites()
