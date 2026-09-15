@@ -36,6 +36,12 @@ intents.reactions = True
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977
 
+# Auto Roles Given on Join
+AUTO_ROLE_IDS = [
+    1525217661691236483,  # Family Role
+    1536661490260770926   # PC Community Role
+]
+
 # Channels
 WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
 INVITE_LOG_CHANNEL_ID = 1548745613640859729    # PX INVITER BOT
@@ -58,7 +64,6 @@ ANDROID_CATEGORY_ID = 1525182001097998345      # Real Android Injector Category
 
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 
-ticket_counter = 210
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
 # Caches
@@ -70,6 +75,27 @@ daily_cooldowns = {}
 channel_webhooks = {}       
 inactivity_warned = set()
 active_giveaways = set()
+
+# --- Persistent Ticket Counter File Logic ---
+COUNTER_FILE = "ticket_counter.txt"
+
+def get_next_ticket_number() -> int:
+    num = 210
+    if os.path.exists(COUNTER_FILE):
+        try:
+            with open(COUNTER_FILE, "r") as f:
+                content = f.read().strip()
+                if content.isdigit():
+                    num = int(content)
+        except Exception:
+            num = 210
+    next_num = num + 1
+    try:
+        with open(COUNTER_FILE, "w") as f:
+            f.write(str(next_num))
+    except Exception:
+        pass
+    return num
 
 
 # --- 3. Rating & Transcript Helpers ---
@@ -397,7 +423,6 @@ class DynamicTicketSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        global ticket_counter
         guild = interaction.guild
         user = interaction.user
         selected_product = self.values[0]
@@ -408,8 +433,7 @@ class DynamicTicketSelect(discord.ui.Select):
             return
 
         clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:15]
-        current_ticket_num = ticket_counter
-        ticket_counter += 1
+        current_ticket_num = get_next_ticket_number()
 
         channel_name = f"{clean_name}-{current_ticket_num}"
 
@@ -565,7 +589,7 @@ async def ghost_tickets_cleaner():
     now = datetime.utcnow()
 
     for channel in category.text_channels:
-        if not any(channel.name.endswith(f"-{num}") for num in range(200, 10000)):
+        if not any(channel.name.endswith(f"-{num}") for num in range(200, 100000)):
             continue
 
         try:
@@ -797,7 +821,7 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
-        if any(channel.name.endswith(f"-{num}") for num in range(200, 10000)):
+        if any(channel.name.endswith(f"-{num}") for num in range(200, 100000)):
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
 
@@ -818,14 +842,14 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 13. Member Events (STRICT ANTI-NUKE RESTORED: NO BOTS ALLOWED) ---
+# --- 13. Member Events (Auto-Roles, Strict Anti-Nuke, Welcomer & Inviter) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
         return
     guild = member.guild
 
-    # --- ZERO-TOLERANCE STRICT ANTI-BOT SYSTEM ---
+    # 1. Zero-Tolerance Anti-Bot
     if member.bot:
         inviter = None
         try:
@@ -835,27 +859,39 @@ async def on_member_join(member):
         except Exception:
             pass
 
-        # Bot ko instant ban karo
         try:
             await member.ban(reason="Anti-Nuke: Unauthorized Bot Addition Blocked")
             print(f"[STRICT ANTI-NUKE] Blocked & Banned Bot: {member.name} ({member.id})", flush=True)
         except Exception as e:
             print(f"[BOT BAN ERROR]: {e}", flush=True)
 
-        # Adder/Inviter par instant Anti-Nuke punishment
         if inviter:
             await execute_antinuke_punishment(guild, inviter, f"Attempted to Add Bot: {member.name}")
         return
 
-    # Normal Members Auto PX Tag
-    if not member.bot and member.id != guild.owner_id:
+    # 2. Auto-Role on Join (Family & PC Community)
+    roles_to_add = []
+    for r_id in AUTO_ROLE_IDS:
+        role_obj = guild.get_role(r_id)
+        if role_obj:
+            roles_to_add.append(role_obj)
+    
+    if roles_to_add:
+        try:
+            await member.add_roles(*roles_to_add, reason="Auto-Role on server join")
+            print(f"[AUTO-ROLE] Assigned {len(roles_to_add)} roles to {member.name}", flush=True)
+        except Exception as e:
+            print(f"[AUTO-ROLE ERROR]: {e}", flush=True)
+
+    # 3. Auto PX Tag
+    if member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
                 await member.edit(nick=f"PX | {member.display_name}"[:32], reason="Auto PX tag on join")
         except Exception:
             pass
 
-    # Invite Logger
+    # 4. Invite Tracker
     inviter = None
     try:
         current_invites = await guild.invites()
@@ -955,7 +991,7 @@ async def on_message(message):
     # 1. AUTO-QR TRIGGER IN TICKETS
     is_in_ticket = (
         hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID
-    ) or any(message.channel.name.endswith(f"-{num}") for num in range(200, 10000))
+    ) or any(message.channel.name.endswith(f"-{num}") for num in range(200, 100000))
 
     if is_in_ticket and lowered in ["qr", "send qr", "!qr", "qr code", "payment qr", "scanner"]:
         qr_embed = discord.Embed(
