@@ -13,7 +13,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Complete Dynamic Ticket & OwO Master Bot is Online 24/7!"
+    return "PX Complete Ticket & OwO Master Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -34,8 +34,8 @@ intents.reactions = True
 
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977
-WHITELIST_USERS = []
 
+# Channels
 WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
 INVITE_LOG_CHANNEL_ID = 1548745613640859729    # PX INVITER BOT
 LEAVE_CHANNEL_ID = 1548745646717014029         # PX LEAVE BOT
@@ -51,10 +51,9 @@ TICKET_CATEGORY_ID = 1525181999646507118
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Product Categories jo Dropdown me auto-reflect hongi
+# Categories to listen for updates
 SYNC_CATEGORY_IDS = [1525182001097998345, 1525182001097998339]
 
-# Official CDN QR Code Link
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 
 ticket_counter = 210
@@ -140,13 +139,13 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
                 f"🚨 **HIGH SECURITY ANTI-NUKE ALERT** 🚨\n\n"
                 f"• **Offender:** `{executor.name}` (`{executor.id}`)\n"
                 f"• **Action:** `{action}`\n"
-                f"• **Status:** Stripped roles & Banned instantly."
+                f"• **Status:** Roles Stripped & Ban Applied Immediately."
             )
     except Exception:
         pass
 
 
-# --- 6. Aesthetic Ticket System & Ordered Generator ---
+# --- 6. Aesthetic Ticket System ---
 class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -188,11 +187,29 @@ class TicketCloseView(discord.ui.View):
 
 
 def generate_ticket_options(guild: discord.Guild):
-    pc_options = []
-    android_options = []
+    """Guaranteed PC Panels First, Android Next, and Services Last"""
+    # 1. Guaranteed Top PC Panels
+    pc_list = [
+        discord.SelectOption(label="PC PANEL • FULL VIP (EXE)", description="Aimkill, Headshot, Silent Aim, ESP - PC", emoji="💻"),
+        discord.SelectOption(label="PC PANEL • STREAMER BYPASS", description="Stream-Proof undetected bypass for PC", emoji="🖥️"),
+        discord.SelectOption(label="PC PANEL • INTERNAL INJECTION", description="Ultra-smooth internal memory panel", emoji="⚡"),
+        discord.SelectOption(label="PC PANEL • AIMKILL EXE", description="Direct EXE auto-headshot PC panel", emoji="💻"),
+        discord.SelectOption(label="PC PANEL • EXTERNAL PANEL", description="Safe external memory injector for PC", emoji="🖥️"),
+        discord.SelectOption(label="PC PANEL • FPS BOOSTER", description="Maximize FPS & reduce emulator lag", emoji="⚡"),
+        discord.SelectOption(label="PC PANEL • UID BYPASS", description="Anti-ban bypass system for PC emulator", emoji="🛡️")
+    ]
 
-    android_keywords = ["APK", "MOD", "INJECTOR", "ROOT", "DRIP", "PATO", "HAXXCKER", "NINE-X", "BR-MOD"]
+    # 2. Top Android Injectors & Category Channels
+    android_list = [
+        discord.SelectOption(label="ANDROID • ROOT / NON-ROOT", description="Auto Headshot, Aimlock, 32/64 Bit Android", emoji="📱"),
+        discord.SelectOption(label="ANDROID • LIB BYPASS VIP", description="100% Main ID Safe Lib Memory Injector", emoji="🛡️"),
+        discord.SelectOption(label="ANDROID • EMOTE & VAULT", description="Rare bundles & all emotes unlock injector", emoji="✨"),
+        discord.SelectOption(label="ANDROID • AIMKILL APK", description="Auto headshot instant aimkill APK", emoji="📱"),
+        discord.SelectOption(label="ANDROID • BR MOD & DRIP", description="Rank booster & custom mod APK", emoji="🎯"),
+        discord.SelectOption(label="ANDROID • HG CHEAT & PATO", description="Exclusive injector bundle for Android", emoji="🔥")
+    ]
 
+    # Dynamically scan custom channels from categories without exceeding limit
     if guild:
         for cat_id in SYNC_CATEGORY_IDS:
             cat = guild.get_channel(cat_id)
@@ -201,40 +218,34 @@ def generate_ticket_options(guild: discord.Guild):
                     clean_name = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().upper()
                     raw_upper = ch.name.upper()
 
-                    is_android = any(k in raw_upper or k in clean_name for k in android_keywords)
+                    # Avoid duplicates
+                    is_android = any(k in raw_upper for k in ["APK", "MOD", "INJECTOR", "ROOT", "DRIP", "PATO", "HAXXCKER", "NINE"])
+                    opt_label = f"ANDROID • {clean_name}"[:100] if is_android else f"PC PANEL • {clean_name}"[:100]
+                    
+                    all_existing_labels = [o.label for o in pc_list + android_list]
+                    if opt_label not in all_existing_labels and len(pc_list) + len(android_list) < 21:
+                        if is_android:
+                            android_list.append(discord.SelectOption(label=opt_label, description=f"Keys for #{ch.name}"[:100], emoji="📱"))
+                        else:
+                            pc_list.append(discord.SelectOption(label=opt_label, description=f"Keys for #{ch.name}"[:100], emoji="💻"))
 
-                    if is_android:
-                        android_options.append(
-                            discord.SelectOption(
-                                label=f"ANDROID • {clean_name}"[:100],
-                                description=f"Instant purchase & key for #{ch.name}"[:100],
-                                emoji="📱"
-                            )
-                        )
-                    else:
-                        pc_options.append(
-                            discord.SelectOption(
-                                label=f"PC PANEL • {clean_name}"[:100],
-                                description=f"Instant purchase & key for #{ch.name}"[:100],
-                                emoji="💻"
-                            )
-                        )
-
-    other_options = [
+    # 3. Core Services
+    service_options = [
         discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
         discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
         discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
 
-    available_slots = 25 - len(other_options)
-    half_slots = available_slots // 2
+    # Discord strictly enforces max 25 items
+    total_allowed_products = 25 - len(service_options)
+    half = total_allowed_products // 2
+    
+    final_pc = pc_list[:half]
+    final_android = android_list[:(total_allowed_products - len(final_pc))]
 
-    selected_pc = pc_options[:half_slots]
-    selected_android = android_options[:(available_slots - len(selected_pc))]
-
-    ordered_options = selected_pc + selected_android + other_options
-    return ordered_options[:25]
+    # Order: PC Panels -> Android -> Services
+    return final_pc + final_android + service_options
 
 
 class DynamicTicketSelect(discord.ui.Select):
@@ -283,7 +294,6 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.followup.send(f"❌ Ticket create error: {e}", ephemeral=True)
             return
 
-        # Open Ticket Log Notification
         open_log_channel = guild.get_channel(TICKET_OPEN_LOG_ID)
         if open_log_channel:
             open_embed = discord.Embed(
@@ -321,7 +331,7 @@ class DynamicTicketSelect(discord.ui.Select):
                 f"• **UPI / QR SCAN:** *Scan the official QR code below.*\n\n"
                 f"📌 **Next Steps:**\n"
                 f"1. Agar **Buy** karna hai toh payment karke screenshot yahan bhejein.\n"
-                f"2. Agar **Free Panel Key** ya **Support** chahiye toh yahan message type karein.\n\n"
+                f"2. Agar **Free Panel Key** ya **Support** chahiye toh message yahan likhein.\n\n"
                 f"💡 *Tip: Chat me kabhi bhi **qr** likhenge toh instant payment QR code aa jayega!* 🚀\n\n"
                 f"*Staff and <@{MY_USER_ID}> will assist you shortly!*"
             ),
@@ -388,7 +398,7 @@ async def update_ticket_panel(guild: discord.Guild):
             try:
                 msg = await t_channel.fetch_message(panel_message_id)
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Panel updated dynamically with ordered options!", flush=True)
+                print("[AUTO-SYNC] Panel updated with guaranteed PC Panels!", flush=True)
                 return
             except Exception:
                 pass
@@ -397,7 +407,7 @@ async def update_ticket_panel(guild: discord.Guild):
             if msg.author.id == bot.user.id and len(msg.embeds) > 0:
                 panel_message_id = msg.id
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Panel message refreshed with ordered options!", flush=True)
+                print("[AUTO-SYNC] Existing panel edited!", flush=True)
                 return
 
         new_msg = await t_channel.send(embed=embed, view=view)
@@ -630,6 +640,7 @@ async def on_member_join(member):
                 pass
             return
 
+    # Auto "PX | " tag on member join
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
@@ -637,6 +648,7 @@ async def on_member_join(member):
         except Exception:
             pass
 
+    # Invite Tracker logic
     inviter = None
     try:
         current_invites = await guild.invites()
@@ -757,7 +769,7 @@ async def on_message(message):
         await send_custom_channel_msg(message.channel, "PX TICKET BOT", embed=qr_embed)
         return
 
-    # 2. Text Setup Command
+    # 2. Text Setup Command Fallback
     if lowered in ["!pxticketsetup", "!ticketsetup", "/pxticketsetup"]:
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -771,7 +783,7 @@ async def on_message(message):
         await message.channel.send("✅ Dynamic ticket panel successfully updated/sent!")
         return
 
-    # 3. OwO Mini-Games
+    # 3. OwO Mini-Games (Channel ID: 1548770349351575632)
     if lowered.startswith("owo") or lowered.startswith("px owo"):
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -906,7 +918,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 11. Slash Commands Suite ---
+# --- 11. Core Slash Command ---
 @bot.tree.command(name="pxticketsetup", description="Deploy dynamic ticket panel reading from categories")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -917,79 +929,6 @@ async def pxticketsetup(interaction: discord.Interaction):
 
     await update_ticket_panel(interaction.guild)
     await interaction.followup.send("✅ Dynamic ticket panel successfully updated!", ephemeral=True)
-
-
-class OwOGroup(app_commands.Group):
-    def __init__(self):
-        super().__init__(name="owo", description="OwO Mini-Game & Economy Commands")
-
-owo_group = OwOGroup()
-
-@owo_group.command(name="cash", description="Check coin balance")
-async def owo_cash(interaction: discord.Interaction):
-    if interaction.channel_id != OWO_CHANNEL_ID:
-        await interaction.response.send_message(f"❌ Sirf <#{OWO_CHANNEL_ID}> me chalega!", ephemeral=True)
-        return
-    display_bal = format_balance(interaction.user.id)
-    await interaction.response.send_message(f"👛 Balance: **{display_bal}** OwO Coins")
-
-@owo_group.command(name="mine", description="Play 3x3 interactive Mines game")
-@app_commands.describe(amount="Kitne coins ki shart lagani hai")
-async def owo_mine_slash(interaction: discord.Interaction, amount: int):
-    if interaction.channel_id != OWO_CHANNEL_ID:
-        await interaction.response.send_message(f"❌ Sirf <#{OWO_CHANNEL_ID}> me chalega!", ephemeral=True)
-        return
-    if amount <= 0:
-        return
-    bal = get_user_balance(interaction.user.id)
-    if interaction.user.id != MY_USER_ID and amount > bal:
-        await interaction.response.send_message("❌ Insufficient balance!", ephemeral=True)
-        return
-
-    view = MinesGameView(interaction.user, amount)
-    await interaction.response.send_message(
-        content=f"💣 **MINES GAME STARTED** | Bet: **{amount:,}** Coins\n3 Hidden Bombs (💣). 💎 dhoondhein aur Cashout karein!",
-        view=view
-    )
-
-bot.tree.add_command(owo_group)
-
-
-@bot.tree.command(name="setpx", description="Bulk apply PX | prefix to members")
-async def setpx(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
-        return
-    await interaction.response.defer()
-    guild = interaction.guild
-    changed = 0
-    for member in guild.members:
-        if member.bot or member.id == guild.owner_id:
-            continue
-        if guild.me.top_role <= member.top_role:
-            continue
-        if not member.display_name.upper().startswith("PX"):
-            try:
-                await member.edit(nick=f"PX | {member.display_name}"[:32])
-                changed += 1
-                await asyncio.sleep(0.5)
-            except Exception:
-                pass
-    await interaction.followup.send(f"✅ `{changed}` members updated with `PX | `.")
-
-
-@bot.tree.command(name="clear", description="Clear chat messages")
-@app_commands.describe(amount="Messages count")
-async def clear(interaction: discord.Interaction, amount: int):
-    if not interaction.user.guild_permissions.manage_messages and interaction.user.id != MY_USER_ID:
-        return
-    await interaction.response.defer(ephemeral=True)
-    deleted = await interaction.channel.purge(limit=max(1, amount))
-    await interaction.followup.send(f"🧹 `{len(deleted)}` messages deleted!", ephemeral=True)
-
-
-@bot.tree.command(name="ping", description="Check latency")
-async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message(f"🏓 Pong! Latency: `{round(bot.latency * 1000)}ms`")
 
 
 # --- 12. Execution Start ---
