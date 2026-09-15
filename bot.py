@@ -47,11 +47,11 @@ RULE_CHANNEL_ID = 1525203386025119807
 TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
 TICKET_CATEGORY_ID = 1525181999646507118       
 
-# Ticket Logs Notification Channels
+# Ticket Notification Logs
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Categories to listen for updates
+# Sync Categories from user images
 SYNC_CATEGORY_IDS = [1525182001097998345, 1525182001097998339]
 
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
@@ -145,7 +145,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 6. Aesthetic Ticket System ---
+# --- 6. Aesthetic Ticket System & Ordered Scanner ---
 class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -187,29 +187,13 @@ class TicketCloseView(discord.ui.View):
 
 
 def generate_ticket_options(guild: discord.Guild):
-    """Guaranteed PC Panels First, Android Next, and Services Last"""
-    # 1. Guaranteed Top PC Panels
-    pc_list = [
-        discord.SelectOption(label="PC PANEL • FULL VIP (EXE)", description="Aimkill, Headshot, Silent Aim, ESP - PC", emoji="💻"),
-        discord.SelectOption(label="PC PANEL • STREAMER BYPASS", description="Stream-Proof undetected bypass for PC", emoji="🖥️"),
-        discord.SelectOption(label="PC PANEL • INTERNAL INJECTION", description="Ultra-smooth internal memory panel", emoji="⚡"),
-        discord.SelectOption(label="PC PANEL • AIMKILL EXE", description="Direct EXE auto-headshot PC panel", emoji="💻"),
-        discord.SelectOption(label="PC PANEL • EXTERNAL PANEL", description="Safe external memory injector for PC", emoji="🖥️"),
-        discord.SelectOption(label="PC PANEL • FPS BOOSTER", description="Maximize FPS & reduce emulator lag", emoji="⚡"),
-        discord.SelectOption(label="PC PANEL • UID BYPASS", description="Anti-ban bypass system for PC emulator", emoji="🛡️")
-    ]
+    """Directly reads all channels from Image 2 & 3 categories + Mandatory Services"""
+    pc_channels = []
+    android_channels = []
+    seen_names = set()
 
-    # 2. Top Android Injectors & Category Channels
-    android_list = [
-        discord.SelectOption(label="ANDROID • ROOT / NON-ROOT", description="Auto Headshot, Aimlock, 32/64 Bit Android", emoji="📱"),
-        discord.SelectOption(label="ANDROID • LIB BYPASS VIP", description="100% Main ID Safe Lib Memory Injector", emoji="🛡️"),
-        discord.SelectOption(label="ANDROID • EMOTE & VAULT", description="Rare bundles & all emotes unlock injector", emoji="✨"),
-        discord.SelectOption(label="ANDROID • AIMKILL APK", description="Auto headshot instant aimkill APK", emoji="📱"),
-        discord.SelectOption(label="ANDROID • BR MOD & DRIP", description="Rank booster & custom mod APK", emoji="🎯"),
-        discord.SelectOption(label="ANDROID • HG CHEAT & PATO", description="Exclusive injector bundle for Android", emoji="🔥")
-    ]
+    android_indicators = ["APK", "MOD", "DRIP", "PATO", "HAXXCKER", "NINE", "ROOT", "INJECTOR"]
 
-    # Dynamically scan custom channels from categories without exceeding limit
     if guild:
         for cat_id in SYNC_CATEGORY_IDS:
             cat = guild.get_channel(cat_id)
@@ -218,34 +202,46 @@ def generate_ticket_options(guild: discord.Guild):
                     clean_name = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().upper()
                     raw_upper = ch.name.upper()
 
-                    # Avoid duplicates
-                    is_android = any(k in raw_upper for k in ["APK", "MOD", "INJECTOR", "ROOT", "DRIP", "PATO", "HAXXCKER", "NINE"])
-                    opt_label = f"ANDROID • {clean_name}"[:100] if is_android else f"PC PANEL • {clean_name}"[:100]
-                    
-                    all_existing_labels = [o.label for o in pc_list + android_list]
-                    if opt_label not in all_existing_labels and len(pc_list) + len(android_list) < 21:
-                        if is_android:
-                            android_list.append(discord.SelectOption(label=opt_label, description=f"Keys for #{ch.name}"[:100], emoji="📱"))
-                        else:
-                            pc_list.append(discord.SelectOption(label=opt_label, description=f"Keys for #{ch.name}"[:100], emoji="💻"))
+                    if clean_name in seen_names:
+                        continue
+                    seen_names.add(clean_name)
 
-    # 3. Core Services
-    service_options = [
+                    is_android = any(k in raw_upper or k in clean_name for k in android_indicators)
+
+                    if is_android:
+                        android_channels.append(
+                            discord.SelectOption(
+                                label=f"ANDROID • {clean_name}"[:100],
+                                description=f"Instant purchase & key for #{ch.name}"[:100],
+                                emoji="📱"
+                            )
+                        )
+                    else:
+                        pc_channels.append(
+                            discord.SelectOption(
+                                label=f"PC PANEL • {clean_name}"[:100],
+                                description=f"Instant purchase & key for #{ch.name}"[:100],
+                                emoji="💻"
+                            )
+                        )
+
+    # Mandatory Core Services
+    mandatory_services = [
         discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
-        discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
         discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
+        discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
 
-    # Discord strictly enforces max 25 items
-    total_allowed_products = 25 - len(service_options)
-    half = total_allowed_products // 2
+    # Discord maximum allowed options in select menu is 25
+    available_slots = 25 - len(mandatory_services)
     
-    final_pc = pc_list[:half]
-    final_android = android_list[:(total_allowed_products - len(final_pc))]
+    # Priority: PC Panels First, Android Channels Next, Services Last
+    selected_pc = pc_channels[:11]
+    remaining = available_slots - len(selected_pc)
+    selected_android = android_channels[:remaining]
 
-    # Order: PC Panels -> Android -> Services
-    return final_pc + final_android + service_options
+    return selected_pc + selected_android + mandatory_services
 
 
 class DynamicTicketSelect(discord.ui.Select):
@@ -398,7 +394,7 @@ async def update_ticket_panel(guild: discord.Guild):
             try:
                 msg = await t_channel.fetch_message(panel_message_id)
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Panel updated with guaranteed PC Panels!", flush=True)
+                print("[AUTO-SYNC] Panel updated dynamically with new/scanned channels!", flush=True)
                 return
             except Exception:
                 pass
@@ -407,7 +403,7 @@ async def update_ticket_panel(guild: discord.Guild):
             if msg.author.id == bot.user.id and len(msg.embeds) > 0:
                 panel_message_id = msg.id
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Existing panel edited!", flush=True)
+                print("[AUTO-SYNC] Existing panel refreshed with updated channels!", flush=True)
                 return
 
         new_msg = await t_channel.send(embed=embed, view=view)
@@ -583,6 +579,7 @@ async def on_ready():
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
+    # Agar in dono product categories me naya channel banega, panel auto-sync hoga
     if channel.category_id in SYNC_CATEGORY_IDS:
         await asyncio.sleep(1)
         await update_ticket_panel(channel.guild)
@@ -593,11 +590,13 @@ async def on_guild_channel_delete(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
     
+    # Category channel delete hone par panel dropdown auto-update
     if channel.category_id in SYNC_CATEGORY_IDS:
         await asyncio.sleep(1)
         await update_ticket_panel(channel.guild)
         return
 
+    # Anti-Nuke: Ignore normal ticket closures
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
@@ -648,7 +647,7 @@ async def on_member_join(member):
         except Exception:
             pass
 
-    # Invite Tracker logic
+    # Invite Tracker
     inviter = None
     try:
         current_invites = await guild.invites()
