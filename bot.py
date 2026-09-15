@@ -14,7 +14,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Complete Ticket & OwO Master Bot is Online 24/7!"
+    return "PX Complete Ticket, Giveaway & OwO Master Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -69,6 +69,7 @@ user_balances = {}
 daily_cooldowns = {}        
 channel_webhooks = {}       
 inactivity_warned = set()
+active_giveaways = set()    # Stores Giveaway message IDs
 
 
 # --- 3. OwO Economy Helpers ---
@@ -148,7 +149,27 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 6. Rating & Close Logic ---
+# --- 6. Reaction Restriction for Giveaways ---
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    # Ignore reactions added by the bot
+    if payload.user_id == bot.user.id:
+        return
+
+    # Check if message is registered as an active giveaway message
+    if payload.message_id in active_giveaways:
+        # If emoji is NOT 🎉, remove it immediately
+        if str(payload.emoji) != "🎉":
+            try:
+                channel = bot.get_channel(payload.channel_id)
+                if channel:
+                    msg = await channel.fetch_message(payload.message_id)
+                    await msg.clear_reaction(payload.emoji)
+            except Exception:
+                pass
+
+
+# --- 7. Rating & Close Logic ---
 class TicketRatingView(discord.ui.View):
     def __init__(self, ticket_name: str, guild: discord.Guild):
         super().__init__(timeout=86400)
@@ -308,7 +329,7 @@ class TicketCloseView(discord.ui.View):
             print(f"Error deleting ticket channel: {e}")
 
 
-# --- 7. Ticket Generator ---
+# --- 8. Dynamic Ticket Selection ---
 def generate_ticket_options(guild: discord.Guild):
     pc_options = []
     android_options = []
@@ -428,7 +449,6 @@ class DynamicTicketSelect(discord.ui.Select):
             except Exception:
                 pass
 
-        # Reason categorization logic
         if "FREE" in selected_product:
             reason_text = "Free Trial / Daily Key Access Request"
         elif "SUPPORT" in selected_product:
@@ -440,7 +460,6 @@ class DynamicTicketSelect(discord.ui.Select):
         else:
             reason_text = f"Purchase Order for {selected_product}"
 
-        # Clean, Professional & Compact Ticket Welcome Card
         embed = discord.Embed(
             title="✦  PERSISTX • SUPPORT DESK  ✦",
             description=(
@@ -526,7 +545,7 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 8. Inactivity Ghost Tickets Auto-Close Loop ---
+# --- 9. Inactivity Cleaner ---
 @tasks.loop(minutes=30)
 async def ghost_tickets_cleaner():
     guild = bot.get_guild(MY_SERVER_ID)
@@ -590,7 +609,7 @@ async def ghost_tickets_cleaner():
             print(f"[GHOST CLEANER ERROR in #{channel.name}]: {e}")
 
 
-# --- 9. Mines Mini-Game View ---
+# --- 10. Mines Mini-Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -710,7 +729,7 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 10. Bot Setup ---
+# --- 11. Bot Setup ---
 class SecurityBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=["!", "/"], intents=intents)
@@ -721,7 +740,7 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 11. Event Listeners ---
+# --- 12. Event Listeners ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -907,7 +926,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 12. Message Event (Auto-QR in Tickets, OwO & Commands) ---
+# --- 13. Message Event (Auto-QR in Tickets, OwO & Commands) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -1094,7 +1113,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 13. Slash Commands ---
+# --- 14. Slash Commands ---
 @bot.tree.command(name="pxticketsetup", description="Deploy dynamic ticket panel reading from categories")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1107,7 +1126,64 @@ async def pxticketsetup(interaction: discord.Interaction):
     await interaction.followup.send("✅ Dynamic ticket panel successfully refreshed & sent!", ephemeral=True)
 
 
-# --- 14. Execution Start ---
+@bot.tree.command(name="giveaway", description="Start an official giveaway")
+@app_commands.describe(prize="Inam kya hai", duration_minutes="Kitne minutes tak chalega", winners="Winners ki count")
+async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
+    if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
+        await interaction.response.send_message("❌ Sirf Admin giveaway start kar sakte hain!", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+    end_time = datetime.utcnow() + timedelta(minutes=duration_minutes)
+
+    embed = discord.Embed(
+        title=f"🎁  {prize.upper()}  🎁",
+        description=(
+            f"• **Winners:** `{winners}`\n"
+            f"• **Ends in:** `{duration_minutes} minutes` (<t:{int(end_time.timestamp())}:R>)\n"
+            f"• **Hosted by:** {interaction.user.mention}\n\n"
+            f"• **React with 🎉 to participate!**"
+        ),
+        color=0xFEE75C
+    )
+    embed.set_footer(text=f"PX PANEL • PX FAMILY ❤️ • Ends at")
+    embed.timestamp = end_time
+
+    gw_msg = await interaction.channel.send(content="@everyone @here 🎉 **New Giveaway** 🎉", embed=embed)
+    await gw_msg.add_reaction("🎉")
+
+    # Register active giveaway for reaction restriction
+    active_giveaways.add(gw_msg.id)
+    await interaction.followup.send(f"✅ Giveaway posted: {gw_msg.jump_url}", ephemeral=True)
+
+    # Wait for completion
+    await asyncio.sleep(duration_minutes * 60)
+
+    try:
+        fresh_msg = await interaction.channel.fetch_message(gw_msg.id)
+        reaction = discord.utils.get(fresh_msg.reactions, emoji="🎉")
+        users = [u async for u in reaction.users() if not u.bot]
+
+        active_giveaways.discard(gw_msg.id)
+
+        if not users:
+            await interaction.channel.send(f"😢 Giveaway `{prize}` ended, lekin koi valid participant nahi tha.")
+            return
+
+        selected_winners = random.sample(users, k=min(winners, len(users)))
+        winner_mentions = ", ".join(w.mention for w in selected_winners)
+
+        win_embed = discord.Embed(
+            title="🎉  GIVEAWAY WINNER ANNOUNCED!  🎉",
+            description=f"Congratulations {winner_mentions}! Aap jeet chuke hain: **{prize}** 🏆\nOpen a ticket to claim your prize!",
+            color=0x57F287
+        )
+        await interaction.channel.send(content=f"👑 {winner_mentions}", embed=win_embed)
+    except Exception as e:
+        print(f"[GIVEAWAY END ERROR]: {e}")
+
+
+# --- 15. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
