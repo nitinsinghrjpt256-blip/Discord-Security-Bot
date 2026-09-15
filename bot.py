@@ -72,7 +72,96 @@ inactivity_warned = set()
 active_giveaways = set()
 
 
-# --- 3. OwO Economy Helpers ---
+# --- 3. Bot Class & Definition (Declared early to prevent NameError) ---
+class TicketCloseView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Close Ticket 🔒", style=discord.ButtonStyle.danger, custom_id="px_ticket_close_btn")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        channel = interaction.channel
+        user = interaction.user
+
+        await interaction.response.send_message("⏳ **Closing Ticket & Generating Transcript...** Channel 5 seconds me delete ho jayega.")
+
+        ticket_creator = None
+        for target, overwrite in channel.overwrites.items():
+            if isinstance(target, discord.Member) and target.id != bot.user.id:
+                ticket_creator = target
+                break
+
+        transcript_file = None
+        try:
+            transcript_file = await generate_transcript(channel)
+        except Exception as e:
+            print(f"[TRANSCRIPT ERROR]: {e}")
+
+        close_log_channel = guild.get_channel(TICKET_CLOSE_LOG_ID)
+        if close_log_channel:
+            close_embed = discord.Embed(
+                title="🔒  TICKET CLOSED & TRANSCRIPT SAVED",
+                description=(
+                    f"A ticket has been permanently closed.\n\n"
+                    f"• **Ticket Channel:** `#{channel.name}`\n"
+                    f"• **Opened By:** {ticket_creator.mention if ticket_creator else 'Unknown'}\n"
+                    f"• **Closed By:** {user.mention} (`{user.name}`)\n"
+                    f"• **Transcript:** Attached below (`.txt`)\n"
+                    f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:F>"
+                ),
+                color=0xED4245
+            )
+            close_embed.set_author(name="PX TICKET BOT", icon_url=guild.icon.url if guild.icon else None)
+            close_embed.set_footer(text="PX Security & Ticket System © 2026", icon_url=guild.icon.url if guild.icon else None)
+            close_embed.timestamp = datetime.utcnow()
+            try:
+                await send_custom_channel_msg(close_log_channel, "PX TICKET BOT", embed=close_embed, file=transcript_file)
+            except Exception:
+                pass
+
+        if ticket_creator:
+            try:
+                dm_embed = discord.Embed(
+                    title="✦  PERSISTX • TICKET CLOSED RECEIPT  ✦",
+                    description=(
+                        f"Hello **{ticket_creator.name}**,\n\n"
+                        f"Aapka support ticket (`#{channel.name}`) close kar diya gaya hai.\n\n"
+                        f"• **Server:** `{guild.name}`\n"
+                        f"• **Closed By:** `{user.name}`\n"
+                        f"• **Status:** `Resolved / Completed`\n\n"
+                        f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
+                        f"  ⭐ **RATE OUR ASSISTANCE**\n"
+                        f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
+                        f"Aapko hamari customer service kaisi lagi? Niche diye gaye buttons se rating zaroor dein! 👇"
+                    ),
+                    color=0xED4245
+                )
+                dm_embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
+                dm_embed.set_footer(text="PX STORE © 2026 • Powered by PERSISTX", icon_url=guild.icon.url if guild.icon else None)
+                dm_embed.timestamp = datetime.utcnow()
+                rating_view = TicketRatingView(channel.name, guild)
+                await ticket_creator.send(embed=dm_embed, view=rating_view)
+            except Exception:
+                pass
+
+        await asyncio.sleep(4)
+        try:
+            await channel.delete(reason=f"Ticket closed by {user.name}")
+        except Exception as e:
+            print(f"Error deleting ticket channel: {e}")
+
+
+class SecurityBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix=["!", "/"], intents=intents)
+
+    async def setup_hook(self):
+        self.add_view(TicketCloseView())
+
+bot = SecurityBot()
+
+
+# --- 4. OwO Economy Helpers ---
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
         return 999_999_999_999
@@ -90,7 +179,7 @@ def update_user_balance(user_id: int, amount: int):
     user_balances[user_id] = max(0, current + amount)
 
 
-# --- 4. Webhook Identity Sender ---
+# --- 5. Webhook Identity Sender ---
 async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None, file=None):
     if not channel or channel.guild.id != MY_SERVER_ID:
         return None
@@ -117,7 +206,7 @@ async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, c
         return await channel.send(content=content, embed=embed, view=view, file=file)
 
 
-# --- 5. Anti-Nuke Engine ---
+# --- 6. Anti-Nuke Engine ---
 async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Member, action: str):
     if executor.id == bot.user.id or guild.id != MY_SERVER_ID:
         return
@@ -149,13 +238,12 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 6. Reaction Restriction for Giveaways ---
+# --- 7. Reaction Restriction for Giveaways ---
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.user_id == bot.user.id:
         return
 
-    # Restrict unallowed reactions on Giveaway messages
     if payload.message_id in active_giveaways:
         if str(payload.emoji) != "🎉":
             try:
@@ -167,7 +255,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 pass
 
 
-# --- 7. Rating & Close Logic ---
+# --- 8. Rating & Transcript Helpers ---
 class TicketRatingView(discord.ui.View):
     def __init__(self, ticket_name: str, guild: discord.Guild):
         super().__init__(timeout=86400)
@@ -249,85 +337,7 @@ async def generate_transcript(channel: discord.TextChannel) -> discord.File:
     return discord.File(fp=io.BytesIO(buffer.getvalue().encode('utf-8')), filename=f"transcript-{channel.name}.txt")
 
 
-class TicketCloseView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Close Ticket 🔒", style=discord.ButtonStyle.danger, custom_id="px_ticket_close_btn")
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        channel = interaction.channel
-        user = interaction.user
-
-        await interaction.response.send_message("⏳ **Closing Ticket & Generating Transcript...** Channel 5 seconds me delete ho jayega.")
-
-        ticket_creator = None
-        for target, overwrite in channel.overwrites.items():
-            if isinstance(target, discord.Member) and target.id != bot.user.id:
-                ticket_creator = target
-                break
-
-        transcript_file = None
-        try:
-            transcript_file = await generate_transcript(channel)
-        except Exception as e:
-            print(f"[TRANSCRIPT ERROR]: {e}")
-
-        close_log_channel = guild.get_channel(TICKET_CLOSE_LOG_ID)
-        if close_log_channel:
-            close_embed = discord.Embed(
-                title="🔒  TICKET CLOSED & TRANSCRIPT SAVED",
-                description=(
-                    f"A ticket has been permanently closed.\n\n"
-                    f"• **Ticket Channel:** `#{channel.name}`\n"
-                    f"• **Opened By:** {ticket_creator.mention if ticket_creator else 'Unknown'}\n"
-                    f"• **Closed By:** {user.mention} (`{user.name}`)\n"
-                    f"• **Transcript:** Attached below (`.txt`)\n"
-                    f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:F>"
-                ),
-                color=0xED4245
-            )
-            close_embed.set_author(name="PX TICKET BOT", icon_url=guild.icon.url if guild.icon else None)
-            close_embed.set_footer(text="PX Security & Ticket System © 2026", icon_url=guild.icon.url if guild.icon else None)
-            close_embed.timestamp = datetime.utcnow()
-            try:
-                await send_custom_channel_msg(close_log_channel, "PX TICKET BOT", embed=close_embed, file=transcript_file)
-            except Exception:
-                pass
-
-        if ticket_creator:
-            try:
-                dm_embed = discord.Embed(
-                    title="✦  PERSISTX • TICKET CLOSED RECEIPT  ✦",
-                    description=(
-                        f"Hello **{ticket_creator.name}**,\n\n"
-                        f"Aapka support ticket (`#{channel.name}`) close kar diya gaya hai.\n\n"
-                        f"• **Server:** `{guild.name}`\n"
-                        f"• **Closed By:** `{user.name}`\n"
-                        f"• **Status:** `Resolved / Completed`\n\n"
-                        f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-                        f"  ⭐ **RATE OUR ASSISTANCE**\n"
-                        f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
-                        f"Aapko hamari customer service kaisi lagi? Niche diye gaye buttons se rating zaroor dein! 👇"
-                    ),
-                    color=0xED4245
-                )
-                dm_embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
-                dm_embed.set_footer(text="PX STORE © 2026 • Powered by PERSISTX", icon_url=guild.icon.url if guild.icon else None)
-                dm_embed.timestamp = datetime.utcnow()
-                rating_view = TicketRatingView(channel.name, guild)
-                await ticket_creator.send(embed=dm_embed, view=rating_view)
-            except Exception:
-                pass
-
-        await asyncio.sleep(4)
-        try:
-            await channel.delete(reason=f"Ticket closed by {user.name}")
-        except Exception as e:
-            print(f"Error deleting ticket channel: {e}")
-
-
-# --- 8. Dynamic Ticket Selection ---
+# --- 9. Dynamic Ticket Options & View ---
 def generate_ticket_options(guild: discord.Guild):
     pc_options = []
     android_options = []
@@ -543,7 +553,7 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 9. Inactivity Cleaner ---
+# --- 10. Inactivity Cleaner Task ---
 @tasks.loop(minutes=30)
 async def ghost_tickets_cleaner():
     guild = bot.get_guild(MY_SERVER_ID)
@@ -607,7 +617,7 @@ async def ghost_tickets_cleaner():
             print(f"[GHOST CLEANER ERROR in #{channel.name}]: {e}")
 
 
-# --- 10. Mines Mini-Game View ---
+# --- 11. Mines Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -725,17 +735,6 @@ class MinesGameView(discord.ui.View):
             view=self
         )
         self.stop()
-
-
-# --- 11. Bot Setup ---
-class SecurityBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix=["!", "/"], intents=intents)
-
-    async def setup_hook(self):
-        self.add_view(TicketCloseView())
-
-bot = SecurityBot()
 
 
 # --- 12. Event Listeners ---
@@ -1135,7 +1134,6 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     end_time = datetime.utcnow() + timedelta(minutes=duration_minutes)
     end_timestamp = int(end_time.timestamp())
 
-    # Professional Giveaway Card
     embed = discord.Embed(
         title="✦  PERSISTX • OFFICIAL GIVEAWAY EVENT  ✦",
         description=(
@@ -1160,7 +1158,6 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
     gw_msg = await interaction.channel.send(content="📢 @everyone @here — **OFFICIAL GIVEAWAY LAUNCHED** 🎁", embed=embed)
     await gw_msg.add_reaction("🎉")
 
-    # Track active giveaway for non-🎉 deletion
     active_giveaways.add(gw_msg.id)
     await interaction.followup.send(f"✅ Giveaway event deployed successfully: {gw_msg.jump_url}", ephemeral=True)
 
@@ -1185,7 +1182,6 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         selected_winners = random.sample(users, k=min(winners, len(users)))
         winner_mentions = ", ".join(w.mention for w in selected_winners)
 
-        # Luxury Enterprise Winner Card
         win_embed = discord.Embed(
             title="✦  GIVEAWAY CONCLUDED: WINNER ANNOUNCEMENT  ✦",
             description=(
