@@ -51,7 +51,7 @@ TICKET_CATEGORY_ID = 1525181999646507118
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Explicit Categories for strict sorting
+# Categories to scan
 PC_CATEGORY_ID = 1525182001097998345           # PcPanel Category
 ANDROID_CATEGORY_ID = 1525182001097998339      # Android Injector Category
 
@@ -67,7 +67,6 @@ member_invited_by = {}
 user_balances = {}          
 daily_cooldowns = {}        
 channel_webhooks = {}       
-panel_message_id = None
 
 
 # --- 3. OwO Economy Helpers ---
@@ -188,12 +187,12 @@ class TicketCloseView(discord.ui.View):
 
 
 def generate_ticket_options(guild: discord.Guild):
-    """Category-based strict sorting: PC Panels -> Android Injectors -> Services"""
+    """Strictly: ALL PC Panels first, ALL Android Injectors second, Services last"""
     pc_options = []
     android_options = []
 
     if guild:
-        # 1. Fetch PC Panel Category channels strictly
+        # 1. Pure PC Panels from PC_CATEGORY_ID
         pc_cat = guild.get_channel(PC_CATEGORY_ID)
         if pc_cat and isinstance(pc_cat, discord.CategoryChannel):
             for ch in pc_cat.text_channels:
@@ -201,12 +200,12 @@ def generate_ticket_options(guild: discord.Guild):
                 pc_options.append(
                     discord.SelectOption(
                         label=f"PC PANEL • {clean}"[:100],
-                        description=f"Instant purchase & key for #{ch.name}"[:100],
+                        description=f"Direct key & setup for #{ch.name}"[:100],
                         emoji="💻"
                     )
                 )
 
-        # 2. Fetch Android Injector Category channels strictly
+        # 2. Pure Android Injectors from ANDROID_CATEGORY_ID
         android_cat = guild.get_channel(ANDROID_CATEGORY_ID)
         if android_cat and isinstance(android_cat, discord.CategoryChannel):
             for ch in android_cat.text_channels:
@@ -214,7 +213,7 @@ def generate_ticket_options(guild: discord.Guild):
                 android_options.append(
                     discord.SelectOption(
                         label=f"ANDROID • {clean}"[:100],
-                        description=f"Instant purchase & key for #{ch.name}"[:100],
+                        description=f"Direct key & setup for #{ch.name}"[:100],
                         emoji="📱"
                     )
                 )
@@ -227,15 +226,12 @@ def generate_ticket_options(guild: discord.Guild):
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
 
-    # Discord strictly allows 25 options maximum
-    available_slots = 25 - len(mandatory_services)
+    # Discord limit is 25 items
+    slots_left = 25 - len(mandatory_services)
     
-    # Give PC panels priority slots, then Android
-    final_pc = pc_options[:11]
-    rem = available_slots - len(final_pc)
-    final_android = android_options[:rem]
-
-    return final_pc + final_android + mandatory_services
+    # Pack PC Panels first, Android next
+    combined_products = (pc_options + android_options)[:slots_left]
+    return combined_products + mandatory_services
 
 
 class DynamicTicketSelect(discord.ui.Select):
@@ -373,38 +369,30 @@ def get_ticket_panel_embed(guild):
     return embed
 
 
-async def update_ticket_panel(guild: discord.Guild):
-    global panel_message_id
+async def force_fresh_ticket_panel(guild: discord.Guild):
+    """Purana panel clear karke ekdam FRESH options ke saath panel bhejo"""
     t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
     if not t_channel:
         return
+
+    # Purane bot ke messages ko channel se clear karo taaki cache clash na ho
+    try:
+        async for msg in t_channel.history(limit=10):
+            if msg.author.id == bot.user.id:
+                await msg.delete()
+                await asyncio.sleep(0.5)
+    except Exception:
+        pass
 
     options = generate_ticket_options(guild)
     view = DynamicTicketView(options)
     embed = get_ticket_panel_embed(guild)
 
     try:
-        if panel_message_id:
-            try:
-                msg = await t_channel.fetch_message(panel_message_id)
-                await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Panel updated dynamically with sorted categories!", flush=True)
-                return
-            except Exception:
-                pass
-
-        async for msg in t_channel.history(limit=10):
-            if msg.author.id == bot.user.id and len(msg.embeds) > 0:
-                panel_message_id = msg.id
-                await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Existing panel refreshed with sorted categories!", flush=True)
-                return
-
-        new_msg = await t_channel.send(embed=embed, view=view)
-        panel_message_id = new_msg.id
-        print("[AUTO-SYNC] Fresh panel posted!", flush=True)
+        await t_channel.send(embed=embed, view=view)
+        print("[AUTO-SYNC] Fresh panel posted with sorted PC & Android channels!", flush=True)
     except Exception as e:
-        print(f"[PANEL UPDATE ERROR]: {e}", flush=True)
+        print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
 # --- 7. Mines Mini-Game View ---
@@ -562,7 +550,8 @@ async def on_ready():
         except Exception:
             pass
 
-        await update_ticket_panel(guild)
+        # Bot start hote hi fresh panel deploy
+        await force_fresh_ticket_panel(guild)
 
     for g in list(bot.guilds):
         if g.id != MY_SERVER_ID:
@@ -573,10 +562,10 @@ async def on_ready():
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
-    # Agar PcPanel ya Android Injector category me channel banega, panel auto-sync hoga
+    # Channel bante hi auto-fresh panel
     if channel.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID]:
         await asyncio.sleep(1)
-        await update_ticket_panel(channel.guild)
+        await force_fresh_ticket_panel(channel.guild)
 
 
 @bot.event
@@ -584,13 +573,12 @@ async def on_guild_channel_delete(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
     
-    # Category channel delete hone par panel dropdown auto-update
+    # Category channel delete hone par panel auto-update
     if channel.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID]:
         await asyncio.sleep(1)
-        await update_ticket_panel(channel.guild)
+        await force_fresh_ticket_panel(channel.guild)
         return
 
-    # Anti-Nuke: Ignore normal ticket closures
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
@@ -604,7 +592,7 @@ async def on_guild_channel_update(before, after):
     if after.guild.id != MY_SERVER_ID:
         return
     if after.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID] and before.name != after.name:
-        await update_ticket_panel(after.guild)
+        await force_fresh_ticket_panel(after.guild)
 
 
 @bot.event
@@ -772,7 +760,7 @@ async def on_message(message):
             await message.channel.send("❌ Sirf Administrator use kar sakte hain!")
             return
 
-        await update_ticket_panel(message.guild)
+        await force_fresh_ticket_panel(message.guild)
         await message.channel.send("✅ Dynamic ticket panel successfully updated/sent!")
         return
 
@@ -920,8 +908,8 @@ async def pxticketsetup(interaction: discord.Interaction):
         await interaction.followup.send("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
         return
 
-    await update_ticket_panel(interaction.guild)
-    await interaction.followup.send("✅ Dynamic ticket panel successfully updated!", ephemeral=True)
+    await force_fresh_ticket_panel(interaction.guild)
+    await interaction.followup.send("✅ Dynamic ticket panel successfully refreshed & sent!", ephemeral=True)
 
 
 # --- 12. Execution Start ---
