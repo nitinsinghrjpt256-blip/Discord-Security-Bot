@@ -15,7 +15,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Master Security, Store, Economy & Music Bot is Online 24/7!"
+    return "PERSISTX Master Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -26,7 +26,7 @@ def keep_alive():
     t.start()
 
 
-# --- 2. Intents & Core Setup ---
+# --- 2. Intents & Setup ---
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -55,13 +55,13 @@ RULE_CHANNEL_ID = 1525203386025119807
 TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
 TICKET_CATEGORY_ID = 1525181999646507118       
 
-# Ticket Notification Logs
+# Ticket Logs
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
 # Categories to scan
-PC_CATEGORY_ID = 1525182001097998339           # Real PcPanel Category
-ANDROID_CATEGORY_ID = 1525182001097998345      # Real Android Injector Category
+PC_CATEGORY_ID = 1525182001097998339
+ANDROID_CATEGORY_ID = 1525182001097998345
 
 # 24/7 Voice Channel
 PUBLIC_VC_ID = 1536673850358636614
@@ -83,7 +83,7 @@ active_giveaways = set()
 song_queue = []
 current_song = None
 
-# --- Persistent Ticket Counter File Logic ---
+# Persistent Counter Logic
 COUNTER_FILE = "ticket_counter.txt"
 
 def get_next_ticket_number() -> int:
@@ -276,7 +276,7 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 5. Economy & Identity Helpers ---
+# --- 5. Economy & Helpers ---
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
         return 999_999_999_999
@@ -368,7 +368,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 pass
 
 
-# --- 8. Dynamic Ticket Generator & Select View ---
+# --- 8. Dynamic Ticket Selection ---
 def generate_ticket_options(guild: discord.Guild):
     pc_options = []
     android_options = []
@@ -439,9 +439,9 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
-        # Clean Username for ticket channel name (NO ticket number in channel name)
+        # Channel name is strictly user name
         clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:20]
-        channel_name = clean_name  # Only username
+        channel_name = clean_name
 
         current_ticket_num = get_next_ticket_number()
 
@@ -597,7 +597,6 @@ async def ghost_tickets_cleaner():
     now = datetime.utcnow()
 
     for channel in category.text_channels:
-        # Check active channels in ticket category
         try:
             last_msg = None
             async for msg in channel.history(limit=1):
@@ -765,9 +764,10 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 11. 24/7 Voice Channel Connection Engine ---
-@tasks.loop(minutes=2)
+# --- 11. Robust 24/7 Voice Channel Connection ---
+@tasks.loop(seconds=30)
 async def ensure_voice_connected():
+    await bot.wait_until_ready()
     guild = bot.get_guild(MY_SERVER_ID)
     if not guild:
         return
@@ -777,14 +777,14 @@ async def ensure_voice_connected():
 
     voice_client = guild.voice_client
     try:
-        if not voice_client or not voice_client.is_connected():
-            await vc_channel.connect(reconnect=True, self_deaf=True)
-            print("[VOICE 24/7] Connected to Public VC!", flush=True)
+        if voice_client is None or not voice_client.is_connected():
+            await vc_channel.connect(timeout=20.0, reconnect=True, self_deaf=True)
+            print("[VOICE 24/7] Auto-Connected to Public VC!", flush=True)
         elif voice_client.channel.id != PUBLIC_VC_ID:
             await voice_client.move_to(vc_channel)
             print("[VOICE 24/7] Re-routed back to Public VC!", flush=True)
     except Exception as e:
-        print(f"[VOICE 24/7 ERROR]: {e}", flush=True)
+        print(f"[VOICE CONNECT RETRY]: {e}", flush=True)
 
 
 # --- 12. Security Checks & Ready Listener ---
@@ -799,7 +799,7 @@ async def global_slash_check(interaction: discord.Interaction):
 async def on_ready():
     print(f"\n==========================================", flush=True)
     print(f"[ONLINE] Logged in as: {bot.user.name} ({bot.user.id})", flush=True)
-    print(f"[SECURE] Strict Anti-Nuke Active for Guild ID: {MY_SERVER_ID}", flush=True)
+    print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
     print(f"==========================================\n", flush=True)
 
     guild = bot.get_guild(MY_SERVER_ID)
@@ -831,7 +831,7 @@ async def on_ready():
             await g.leave()
 
 
-# --- 13. Channels & Role Watchdog Listeners ---
+# --- 13. Channels & Role Watchdog ---
 @bot.event
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
@@ -873,14 +873,14 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 14. Member Events (Auto-Roles, Luxury Welcome DM, Strict Anti-Nuke) ---
+# --- 14. Member Events ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
         return
     guild = member.guild
 
-    # 1. Zero-Tolerance Anti-Bot
+    # 1. Strict Anti-Nuke
     if member.bot:
         inviter = None
         try:
@@ -900,7 +900,7 @@ async def on_member_join(member):
             await execute_antinuke_punishment(guild, inviter, f"Attempted to Add Bot: {member.name}")
         return
 
-    # 2. Auto-Role on Join (Family & PC Community)
+    # 2. Auto-Role Assignment
     roles_to_add = []
     for r_id in AUTO_ROLE_IDS:
         role_obj = guild.get_role(r_id)
@@ -985,7 +985,7 @@ async def on_member_join(member):
         embed.timestamp = datetime.utcnow()
         await send_custom_channel_msg(welcome_channel, "PX WELCOMER BOT", content=f"Welcome {member.mention}!", embed=embed)
 
-    # 5. Professional Luxury Welcome Direct Message (DM)
+    # 5. Professional Luxury Welcome DM
     try:
         dm_embed = discord.Embed(
             title="✦  WELCOME TO PERSISTX OFFICIAL COMMUNITY  ✦",
@@ -1039,7 +1039,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 15. Message Event (Auto-QR, OwO Mini-Games & Text Triggers) ---
+# --- 15. Message Event ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -1077,7 +1077,7 @@ async def on_message(message):
         await send_custom_channel_msg(message.channel, "PX TICKET BOT", embed=qr_embed)
         return
 
-    # 2. Text Setup Command Fallback
+    # 2. Text Setup Fallback
     if lowered in ["!pxticketsetup", "!ticketsetup", "/pxticketsetup"]:
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -1091,7 +1091,7 @@ async def on_message(message):
         await message.channel.send("✅ Dynamic ticket panel successfully refreshed & sent!")
         return
 
-    # 3. OwO Mini-Games (Channel ID: 1548770349351575632)
+    # 3. OwO Mini-Games
     if lowered.startswith("owo") or lowered.startswith("px owo"):
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -1226,7 +1226,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 16. Optimized Music Engine Helpers ---
+# --- 16. Audio Streaming Core ---
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
     'extractaudio': True,
@@ -1268,7 +1268,7 @@ def play_next_song(guild: discord.Guild):
         current_song = None
 
 
-# --- 17. ALL ACTIVE SLASH COMMANDS SUITE ---
+# --- 17. Slash Commands Suite ---
 @bot.tree.command(name="pxticketsetup", description="Deploy/Refresh the dynamic store ticket panel")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1365,7 +1365,27 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         print(f"[GIVEAWAY END ERROR]: {e}")
 
 
-# --- MUSIC SLASH COMMANDS ---
+# --- Music Commands ---
+@bot.tree.command(name="joinvc", description="Forcefully connect bot to 24/7 Public VC")
+async def joinvc(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    guild = interaction.guild
+    vc_channel = guild.get_channel(PUBLIC_VC_ID)
+    if not vc_channel:
+        await interaction.followup.send("❌ Channel ID galat hai ya channel exist nahi karta!", ephemeral=True)
+        return
+        
+    voice_client = guild.voice_client
+    try:
+        if voice_client and voice_client.is_connected():
+            await voice_client.move_to(vc_channel)
+        else:
+            await vc_channel.connect(timeout=20.0, reconnect=True, self_deaf=True)
+        await interaction.followup.send(f"✅ Bot successfully joined <#{PUBLIC_VC_ID}>!", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Join failed: `{e}`", ephemeral=True)
+
+
 @bot.tree.command(name="play", description="Play audio from YouTube, Spotify title, or direct link in 24/7 VC")
 @app_commands.describe(query="Song name or link")
 async def play(interaction: discord.Interaction, query: str):
@@ -1494,7 +1514,7 @@ async def view_queue(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-# --- GENERAL UTILITY SLASH COMMANDS ---
+# --- Utility Commands ---
 @bot.tree.command(name="clear", description="Clear a specific number of chat messages")
 @app_commands.describe(amount="Messages count (Max: 100)")
 async def clear(interaction: discord.Interaction, amount: int):
@@ -1582,10 +1602,11 @@ async def help_command(interaction: discord.Interaction):
             "• `/giveaway` — Host a verified clean giveaway\n"
             "• `qr` — Auto-dispenses payment scanner inside any ticket\n\n"
             "**Music & Voice (24/7 in <#{PUBLIC_VC_ID}>)**\n"
-            "• `/play <query>` — Play YouTube/Spotify query or URL\n"
+            "• `/joinvc` — Force-join bot to 24/7 Public VC\n"
+            "• `/play <query>` — Play YouTube/Spotify track title or URL\n"
             "• `/skip` — Skip active song\n"
-            "• `/pause` & `/resume` — Pause or resume stream\n"
-            "• `/queue` — View queued tracks\n"
+            "• `/pause` & `/resume` — Control audio stream\n"
+            "• `/queue` — View upcoming queued tracks\n"
             "• `/stop` — Clear queue (Bot stays in VC 24/7)\n\n"
             "**Administration & Moderation**\n"
             "• `/clear <amount>` — Purge chat history quickly\n"
@@ -1605,7 +1626,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 18. Execution Start ---
+# --- 18. Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
