@@ -51,8 +51,9 @@ TICKET_CATEGORY_ID = 1525181999646507118
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Sync Categories from user images
-SYNC_CATEGORY_IDS = [1525182001097998345, 1525182001097998339]
+# Explicit Categories for strict sorting
+PC_CATEGORY_ID = 1525182001097998345           # PcPanel Category
+ANDROID_CATEGORY_ID = 1525182001097998339      # Android Injector Category
 
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 
@@ -145,7 +146,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 6. Aesthetic Ticket System & Ordered Scanner ---
+# --- 6. Aesthetic Ticket System ---
 class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -187,45 +188,38 @@ class TicketCloseView(discord.ui.View):
 
 
 def generate_ticket_options(guild: discord.Guild):
-    """Directly reads all channels from Image 2 & 3 categories + Mandatory Services"""
-    pc_channels = []
-    android_channels = []
-    seen_names = set()
-
-    android_indicators = ["APK", "MOD", "DRIP", "PATO", "HAXXCKER", "NINE", "ROOT", "INJECTOR"]
+    """Category-based strict sorting: PC Panels -> Android Injectors -> Services"""
+    pc_options = []
+    android_options = []
 
     if guild:
-        for cat_id in SYNC_CATEGORY_IDS:
-            cat = guild.get_channel(cat_id)
-            if cat and isinstance(cat, discord.CategoryChannel):
-                for ch in cat.text_channels:
-                    clean_name = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().upper()
-                    raw_upper = ch.name.upper()
+        # 1. Fetch PC Panel Category channels strictly
+        pc_cat = guild.get_channel(PC_CATEGORY_ID)
+        if pc_cat and isinstance(pc_cat, discord.CategoryChannel):
+            for ch in pc_cat.text_channels:
+                clean = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().title()
+                pc_options.append(
+                    discord.SelectOption(
+                        label=f"PC PANEL • {clean}"[:100],
+                        description=f"Instant purchase & key for #{ch.name}"[:100],
+                        emoji="💻"
+                    )
+                )
 
-                    if clean_name in seen_names:
-                        continue
-                    seen_names.add(clean_name)
+        # 2. Fetch Android Injector Category channels strictly
+        android_cat = guild.get_channel(ANDROID_CATEGORY_ID)
+        if android_cat and isinstance(android_cat, discord.CategoryChannel):
+            for ch in android_cat.text_channels:
+                clean = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().title()
+                android_options.append(
+                    discord.SelectOption(
+                        label=f"ANDROID • {clean}"[:100],
+                        description=f"Instant purchase & key for #{ch.name}"[:100],
+                        emoji="📱"
+                    )
+                )
 
-                    is_android = any(k in raw_upper or k in clean_name for k in android_indicators)
-
-                    if is_android:
-                        android_channels.append(
-                            discord.SelectOption(
-                                label=f"ANDROID • {clean_name}"[:100],
-                                description=f"Instant purchase & key for #{ch.name}"[:100],
-                                emoji="📱"
-                            )
-                        )
-                    else:
-                        pc_channels.append(
-                            discord.SelectOption(
-                                label=f"PC PANEL • {clean_name}"[:100],
-                                description=f"Instant purchase & key for #{ch.name}"[:100],
-                                emoji="💻"
-                            )
-                        )
-
-    # Mandatory Core Services
+    # 3. Mandatory Service Options
     mandatory_services = [
         discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
         discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
@@ -233,15 +227,15 @@ def generate_ticket_options(guild: discord.Guild):
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
 
-    # Discord maximum allowed options in select menu is 25
+    # Discord strictly allows 25 options maximum
     available_slots = 25 - len(mandatory_services)
     
-    # Priority: PC Panels First, Android Channels Next, Services Last
-    selected_pc = pc_channels[:11]
-    remaining = available_slots - len(selected_pc)
-    selected_android = android_channels[:remaining]
+    # Give PC panels priority slots, then Android
+    final_pc = pc_options[:11]
+    rem = available_slots - len(final_pc)
+    final_android = android_options[:rem]
 
-    return selected_pc + selected_android + mandatory_services
+    return final_pc + final_android + mandatory_services
 
 
 class DynamicTicketSelect(discord.ui.Select):
@@ -394,7 +388,7 @@ async def update_ticket_panel(guild: discord.Guild):
             try:
                 msg = await t_channel.fetch_message(panel_message_id)
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Panel updated dynamically with new/scanned channels!", flush=True)
+                print("[AUTO-SYNC] Panel updated dynamically with sorted categories!", flush=True)
                 return
             except Exception:
                 pass
@@ -403,7 +397,7 @@ async def update_ticket_panel(guild: discord.Guild):
             if msg.author.id == bot.user.id and len(msg.embeds) > 0:
                 panel_message_id = msg.id
                 await msg.edit(embed=embed, view=view)
-                print("[AUTO-SYNC] Existing panel refreshed with updated channels!", flush=True)
+                print("[AUTO-SYNC] Existing panel refreshed with sorted categories!", flush=True)
                 return
 
         new_msg = await t_channel.send(embed=embed, view=view)
@@ -579,8 +573,8 @@ async def on_ready():
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
-    # Agar in dono product categories me naya channel banega, panel auto-sync hoga
-    if channel.category_id in SYNC_CATEGORY_IDS:
+    # Agar PcPanel ya Android Injector category me channel banega, panel auto-sync hoga
+    if channel.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID]:
         await asyncio.sleep(1)
         await update_ticket_panel(channel.guild)
 
@@ -591,7 +585,7 @@ async def on_guild_channel_delete(channel):
         return
     
     # Category channel delete hone par panel dropdown auto-update
-    if channel.category_id in SYNC_CATEGORY_IDS:
+    if channel.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID]:
         await asyncio.sleep(1)
         await update_ticket_panel(channel.guild)
         return
@@ -609,7 +603,7 @@ async def on_guild_channel_delete(channel):
 async def on_guild_channel_update(before, after):
     if after.guild.id != MY_SERVER_ID:
         return
-    if after.category_id in SYNC_CATEGORY_IDS and before.name != after.name:
+    if after.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID] and before.name != after.name:
         await update_ticket_panel(after.guild)
 
 
