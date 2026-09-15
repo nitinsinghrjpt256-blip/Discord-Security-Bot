@@ -57,7 +57,7 @@ SYNC_CATEGORY_IDS = [1525182001097998345, 1525182001097998339]
 # Official CDN QR Code Link
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 
-ticket_counter = 207
+ticket_counter = 210
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
 # Caches
@@ -102,12 +102,10 @@ async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, c
             channel_webhooks[channel.id] = webhook
 
         avatar_url = bot.user.display_avatar.url if bot.user else None
-        if view:
-            return await channel.send(content=content, embed=embed, view=view)
-
         return await webhook.send(
             content=content,
             embed=embed,
+            view=view,
             username=bot_name,
             avatar_url=avatar_url,
             wait=True
@@ -161,7 +159,6 @@ class TicketCloseView(discord.ui.View):
 
         await interaction.response.send_message("⏳ **Closing Ticket...** Channel 3 seconds me delete ho jayega.")
 
-        # Professional Close Log Notification
         close_log_channel = guild.get_channel(TICKET_CLOSE_LOG_ID)
         if close_log_channel:
             close_embed = discord.Embed(
@@ -175,11 +172,11 @@ class TicketCloseView(discord.ui.View):
                 ),
                 color=0xED4245
             )
-            close_embed.set_author(name="PX TICKET AUDIT", icon_url=guild.icon.url if guild.icon else None)
+            close_embed.set_author(name="PX TICKET BOT", icon_url=guild.icon.url if guild.icon else None)
             close_embed.set_footer(text="PX Security & Ticket System © 2026", icon_url=guild.icon.url if guild.icon else None)
             close_embed.timestamp = datetime.utcnow()
             try:
-                await close_log_channel.send(embed=close_embed)
+                await send_custom_channel_msg(close_log_channel, "PX TICKET BOT", embed=close_embed)
             except Exception:
                 pass
 
@@ -261,10 +258,11 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
-        clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:10]
-        channel_name = f"ticket-{clean_name}-{ticket_counter}"
+        clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:15]
         current_ticket_num = ticket_counter
         ticket_counter += 1
+
+        channel_name = f"{clean_name}-{current_ticket_num}"
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -285,7 +283,7 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.followup.send(f"❌ Ticket create error: {e}", ephemeral=True)
             return
 
-        # Professional Open Log Notification
+        # Open Ticket Log Notification
         open_log_channel = guild.get_channel(TICKET_OPEN_LOG_ID)
         if open_log_channel:
             open_embed = discord.Embed(
@@ -301,11 +299,11 @@ class DynamicTicketSelect(discord.ui.Select):
                 color=0x57F287
             )
             open_embed.set_thumbnail(url=user.display_avatar.url)
-            open_embed.set_author(name="PX TICKET LOGS", icon_url=guild.icon.url if guild.icon else None)
+            open_embed.set_author(name="PX TICKET BOT", icon_url=guild.icon.url if guild.icon else None)
             open_embed.set_footer(text="PX Notification Service © 2026", icon_url=guild.icon.url if guild.icon else None)
             open_embed.timestamp = datetime.utcnow()
             try:
-                await open_log_channel.send(embed=open_embed)
+                await send_custom_channel_msg(open_log_channel, "PX TICKET BOT", embed=open_embed)
             except Exception:
                 pass
 
@@ -331,11 +329,18 @@ class DynamicTicketSelect(discord.ui.Select):
         )
         embed.set_thumbnail(url=user.display_avatar.url)
         embed.set_image(url=QR_IMAGE_URL)
+        embed.set_author(name="PX TICKET BOT", icon_url=guild.icon.url if guild.icon else None)
         embed.set_footer(text="PX STORE © 2026 • Powered by PERSISTX", icon_url=guild.icon.url if guild.icon else None)
         embed.timestamp = datetime.utcnow()
 
         close_view = TicketCloseView()
-        await ticket_channel.send(content=f"{user.mention} | <@{MY_USER_ID}>", embed=embed, view=close_view)
+        await send_custom_channel_msg(
+            ticket_channel,
+            "PX TICKET BOT",
+            content=f"{user.mention} | <@{MY_USER_ID}>",
+            embed=embed,
+            view=close_view
+        )
         await interaction.followup.send(f"Your ticket has been created ! {ticket_channel.mention}", ephemeral=True)
 
 
@@ -363,7 +368,7 @@ def get_ticket_panel_embed(guild):
         ),
         color=0xED4245
     )
-    embed.set_author(name="PX TICKET KING • PERSISTX", icon_url=guild.icon.url if guild.icon else None)
+    embed.set_author(name="PX TICKET BOT", icon_url=guild.icon.url if guild.icon else None)
     embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Store", icon_url=guild.icon.url if guild.icon else None)
     return embed
 
@@ -586,7 +591,7 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
-        if "ticket-" in channel.name.lower():
+        if any(channel.name.endswith(f"-{num}") for num in range(200, 1000)):
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
 
@@ -727,9 +732,9 @@ async def on_message(message):
     lowered = content.lower()
 
     # 1. AUTO-QR TRIGGER IN TICKETS
-    is_in_ticket = "ticket-" in message.channel.name.lower() or (
+    is_in_ticket = (
         hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID
-    )
+    ) or any(message.channel.name.endswith(f"-{num}") for num in range(200, 1000))
 
     if is_in_ticket and lowered in ["qr", "send qr", "!qr", "qr code", "payment qr", "scanner"]:
         qr_embed = discord.Embed(
@@ -746,9 +751,10 @@ async def on_message(message):
             color=0xED4245
         )
         qr_embed.set_image(url=QR_IMAGE_URL)
+        qr_embed.set_author(name="PX TICKET BOT", icon_url=message.guild.icon.url if message.guild.icon else None)
         qr_embed.set_footer(text="PX SECURE PAYMENT SYSTEM © 2026", icon_url=message.guild.icon.url if message.guild.icon else None)
         qr_embed.timestamp = datetime.utcnow()
-        await message.channel.send(embed=qr_embed)
+        await send_custom_channel_msg(message.channel, "PX TICKET BOT", embed=qr_embed)
         return
 
     # 2. Text Setup Command
