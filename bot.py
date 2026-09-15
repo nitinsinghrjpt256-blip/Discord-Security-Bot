@@ -439,10 +439,11 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
-        clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:15]
-        current_ticket_num = get_next_ticket_number()
+        # Clean Username for ticket channel name (NO ticket number in channel name)
+        clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:20]
+        channel_name = clean_name  # Only username
 
-        channel_name = f"{clean_name}-{current_ticket_num}"
+        current_ticket_num = get_next_ticket_number()
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -596,9 +597,7 @@ async def ghost_tickets_cleaner():
     now = datetime.utcnow()
 
     for channel in category.text_channels:
-        if not any(channel.name.endswith(f"-{num}") for num in range(200, 100000)):
-            continue
-
+        # Check active channels in ticket category
         try:
             last_msg = None
             async for msg in channel.history(limit=1):
@@ -853,7 +852,7 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
-        if any(channel.name.endswith(f"-{num}") for num in range(200, 100000)):
+        if channel.category_id == TICKET_CATEGORY_ID:
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
 
@@ -1015,7 +1014,7 @@ async def on_member_join(member):
         await member.send(embed=dm_embed)
         print(f"[WELCOME DM SUCCESS] Sent luxury welcome DM to {member.name}", flush=True)
     except Exception as e:
-        print(f"[WELCOME DM FAILED]: Could not send DM to {member.name} (DMs might be closed): {e}", flush=True)
+        print(f"[WELCOME DM FAILED]: Could not send DM to {member.name}: {e}", flush=True)
 
 
 @bot.event
@@ -1055,7 +1054,7 @@ async def on_message(message):
     # 1. AUTO-QR TRIGGER IN TICKETS
     is_in_ticket = (
         hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID
-    ) or any(message.channel.name.endswith(f"-{num}") for num in range(200, 100000))
+    )
 
     if is_in_ticket and lowered in ["qr", "send qr", "!qr", "qr code", "payment qr", "scanner"]:
         qr_embed = discord.Embed(
@@ -1384,7 +1383,6 @@ async def play(interaction: discord.Interaction, query: str):
             return
 
     try:
-        # Run extractor in non-blocking thread
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False))
         
