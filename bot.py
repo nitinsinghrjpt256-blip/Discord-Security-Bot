@@ -47,6 +47,10 @@ RULE_CHANNEL_ID = 1525203386025119807
 TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
 TICKET_CATEGORY_ID = 1525181999646507118       
 
+# Ticket Logs Notification Channels
+TICKET_OPEN_LOG_ID = 1544967681898450985
+TICKET_CLOSE_LOG_ID = 1544391704323563612
+
 # Product Categories jo Dropdown me auto-reflect hongi
 SYNC_CATEGORY_IDS = [1525182001097998345, 1525182001097998339]
 
@@ -151,16 +155,42 @@ class TicketCloseView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket 🔒", style=discord.ButtonStyle.danger, custom_id="px_ticket_close_btn")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        channel = interaction.channel
+        user = interaction.user
+
         await interaction.response.send_message("⏳ **Closing Ticket...** Channel 3 seconds me delete ho jayega.")
+
+        # Professional Close Log Notification
+        close_log_channel = guild.get_channel(TICKET_CLOSE_LOG_ID)
+        if close_log_channel:
+            close_embed = discord.Embed(
+                title="🔒  TICKET CLOSED LOG",
+                description=(
+                    f"A ticket has been permanently closed.\n\n"
+                    f"• **Ticket Channel:** `#{channel.name}`\n"
+                    f"• **Closed By:** {user.mention} (`{user.name}`)\n"
+                    f"• **Category:** `PERSISTX TICKETS`\n"
+                    f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:F>"
+                ),
+                color=0xED4245
+            )
+            close_embed.set_author(name="PX TICKET AUDIT", icon_url=guild.icon.url if guild.icon else None)
+            close_embed.set_footer(text="PX Security & Ticket System © 2026", icon_url=guild.icon.url if guild.icon else None)
+            close_embed.timestamp = datetime.utcnow()
+            try:
+                await close_log_channel.send(embed=close_embed)
+            except Exception:
+                pass
+
         await asyncio.sleep(3)
         try:
-            await interaction.channel.delete(reason=f"Ticket closed by {interaction.user.name}")
+            await channel.delete(reason=f"Ticket closed by {user.name}")
         except Exception as e:
             print(f"Error deleting ticket channel: {e}")
 
 
 def generate_ticket_options(guild: discord.Guild):
-    """Pehle PC Panels, fir Android Injectors, aur aakhiri me baaki options"""
     pc_options = []
     android_options = []
 
@@ -255,6 +285,30 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.followup.send(f"❌ Ticket create error: {e}", ephemeral=True)
             return
 
+        # Professional Open Log Notification
+        open_log_channel = guild.get_channel(TICKET_OPEN_LOG_ID)
+        if open_log_channel:
+            open_embed = discord.Embed(
+                title="🎫  NEW TICKET CREATED",
+                description=(
+                    f"A new ticket has been opened by {user.mention}.\n\n"
+                    f"• **Ticket Channel:** {ticket_channel.mention} (`#{channel_name}`)\n"
+                    f"• **Ticket ID:** `#{current_ticket_num}`\n"
+                    f"• **User:** `{user.name}` (`{user.id}`)\n"
+                    f"• **Selected Product:** `{selected_product}`\n"
+                    f"• **Created At:** <t:{int(datetime.utcnow().timestamp())}:F>"
+                ),
+                color=0x57F287
+            )
+            open_embed.set_thumbnail(url=user.display_avatar.url)
+            open_embed.set_author(name="PX TICKET LOGS", icon_url=guild.icon.url if guild.icon else None)
+            open_embed.set_footer(text="PX Notification Service © 2026", icon_url=guild.icon.url if guild.icon else None)
+            open_embed.timestamp = datetime.utcnow()
+            try:
+                await open_log_channel.send(embed=open_embed)
+            except Exception:
+                pass
+
         embed = discord.Embed(
             title="✦  PERSISTX • ORDER & SUPPORT TICKET  ✦",
             description=(
@@ -282,8 +336,6 @@ class DynamicTicketSelect(discord.ui.Select):
 
         close_view = TicketCloseView()
         await ticket_channel.send(content=f"{user.mention} | <@{MY_USER_ID}>", embed=embed, view=close_view)
-        
-        # User requirement: "your ticket has been created !"
         await interaction.followup.send(f"Your ticket has been created ! {ticket_channel.mention}", ephemeral=True)
 
 
