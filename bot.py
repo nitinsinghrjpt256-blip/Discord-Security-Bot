@@ -8,13 +8,14 @@ from flask import Flask
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+import yt_dlp
 
 # --- 1. Web Server (Render 24/7 Keep Alive) ---
 web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Master Security & Store Bot is Online 24/7!"
+    return "PX Master Security, Store & Music Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -32,11 +33,12 @@ intents.message_content = True
 intents.guilds = True
 intents.invites = True
 intents.reactions = True
+intents.voice_states = True
 
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977
 
-# Auto Roles Given on Join
+# Roles
 AUTO_ROLE_IDS = [
     1525217661691236483,  # Family Role
     1536661490260770926   # PC Community Role
@@ -62,8 +64,10 @@ TICKET_CLOSE_LOG_ID = 1544391704323563612
 PC_CATEGORY_ID = 1525182001097998339           # Real PcPanel Category
 ANDROID_CATEGORY_ID = 1525182001097998345      # Real Android Injector Category
 
-QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
+# 24/7 Voice Channel ID
+PUBLIC_VC_ID = 1536673850358636614
 
+QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
 # Caches
@@ -75,6 +79,10 @@ daily_cooldowns = {}
 channel_webhooks = {}       
 inactivity_warned = set()
 active_giveaways = set()
+
+# Music Player Cache
+song_queue = []
+current_song = None
 
 # --- Persistent Ticket Counter File Logic ---
 COUNTER_FILE = "ticket_counter.txt"
@@ -759,7 +767,29 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 11. Security Checks & Ready Listener ---
+# --- 11. 24/7 Voice Channel Connection Engine ---
+@tasks.loop(minutes=2)
+async def ensure_voice_connected():
+    guild = bot.get_guild(MY_SERVER_ID)
+    if not guild:
+        return
+    vc_channel = guild.get_channel(PUBLIC_VC_ID)
+    if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
+        return
+
+    voice_client = guild.voice_client
+    try:
+        if not voice_client:
+            await vc_channel.connect(reconnect=True, self_deaf=True)
+            print("[VOICE 24/7] Connected to Public VC!", flush=True)
+        elif voice_client.channel.id != PUBLIC_VC_ID:
+            await voice_client.move_to(vc_channel)
+            print("[VOICE 24/7] Re-routed back to Public VC!", flush=True)
+    except Exception as e:
+        print(f"[VOICE 24/7 ERROR]: {e}", flush=True)
+
+
+# --- 12. Security Checks & Ready Listener ---
 @bot.tree.interaction_check
 async def global_slash_check(interaction: discord.Interaction):
     if not interaction.guild or interaction.guild.id != MY_SERVER_ID:
@@ -793,6 +823,9 @@ async def on_ready():
         if not ghost_tickets_cleaner.is_running():
             ghost_tickets_cleaner.start()
 
+        if not ensure_voice_connected.is_running():
+            ensure_voice_connected.start()
+
         await force_fresh_ticket_panel(guild)
 
     for g in list(bot.guilds):
@@ -800,7 +833,7 @@ async def on_ready():
             await g.leave()
 
 
-# --- 12. Channels & Role Watchdog Listeners ---
+# --- 13. Channels & Role Watchdog Listeners ---
 @bot.event
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
@@ -842,7 +875,7 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 13. Member Events (Auto-Roles, Strict Anti-Nuke, Welcomer & Inviter) ---
+# --- 14. Member Events (Auto-Roles, Welcome DM, Strict Anti-Nuke) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
@@ -954,6 +987,39 @@ async def on_member_join(member):
         embed.timestamp = datetime.utcnow()
         await send_custom_channel_msg(welcome_channel, "PX WELCOMER BOT", content=f"Welcome {member.mention}!", embed=embed)
 
+    # 5. Professional Welcome Direct Message (DM)
+    try:
+        dm_embed = discord.Embed(
+            title="✦  WELCOME TO PERSISTX OFFICIAL COMMUNITY  ✦",
+            description=(
+                f"Hello **{member.name}**, welcome to **{guild.name}**! 🚀\n\n"
+                f"We are delighted to have you as part of the **PX FAMILY**.\n\n"
+                f"╭─────────────────────────────────╮\n"
+                f"  📌 **QUICK ACCESS & GUIDELINES**\n"
+                f"╰─────────────────────────────────╯\n"
+                f"• 📜 **Official Server Rules:** <#{RULE_CHANNEL_ID}>\n"
+                f"• 💬 **Community Lounge:** <#{CHAT_CHANNEL_ID}>\n"
+                f"• 🛍️ **PC & Android Store:** <#{TICKET_PANEL_CHANNEL_ID}>\n"
+                f"• 🔊 **24/7 Voice Hangout:** <#{PUBLIC_VC_ID}>\n\n"
+                f"╭─────────────────────────────────╮\n"
+                f"  💎 **AUTOMATED PRIVILEGES**\n"
+                f"╰─────────────────────────────────╯\n"
+                f"• You have been automatically assigned **Family & Community** roles.\n"
+                f"• Your profile has been formatted with the verified `PX | ` prefix.\n\n"
+                f"*For official panel purchases or trial keys, please open a private ticket.*"
+            ),
+            color=0xED4245
+        )
+        dm_embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
+        dm_embed.set_author(name="PERSISTX ENTERPRISE", icon_url=guild.icon.url if guild.icon else None)
+        dm_embed.set_footer(text="PERSISTX OFFICIAL STORE © 2026 • Verified Customer Portal", icon_url=guild.icon.url if guild.icon else None)
+        dm_embed.timestamp = datetime.utcnow()
+        await member.send(embed=dm_embed)
+        print(f"[WELCOME DM SUCCESS] Sent welcome DM to {member.name}", flush=True)
+    except Exception as e:
+        print(f"[WELCOME DM FAILED]: Could not send DM to {member.name} (DMs might be closed): {e}", flush=True)
+
+
 @bot.event
 async def on_member_remove(member):
     if member.guild.id != MY_SERVER_ID:
@@ -976,7 +1042,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 14. Message Event (Auto-QR, OwO Mini-Games & Text Triggers) ---
+# --- 15. Message Event (Auto-QR, OwO Mini-Games & Text Triggers) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -1163,7 +1229,36 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 15. ALL ACTIVE SLASH COMMANDS SUITE ---
+# --- 16. Music Engine Helpers ---
+YTDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'noplaylist': True,
+    'quiet': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0'
+}
+
+FFMPEG_OPTIONS = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn'
+}
+
+ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+
+def play_next_song(guild: discord.Guild):
+    global current_song
+    if len(song_queue) > 0:
+        next_track = song_queue.pop(0)
+        current_song = next_track
+        voice_client = guild.voice_client
+        if voice_client and voice_client.is_connected():
+            audio_source = discord.FFmpegPCMAudio(next_track['url'], **FFMPEG_OPTIONS)
+            voice_client.play(audio_source, after=lambda e: play_next_song(guild))
+    else:
+        current_song = None
+
+
+# --- 17. ALL ACTIVE SLASH COMMANDS SUITE ---
 @bot.tree.command(name="pxticketsetup", description="Deploy/Refresh the dynamic store ticket panel")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1260,6 +1355,131 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         print(f"[GIVEAWAY END ERROR]: {e}")
 
 
+# --- MUSIC SLASH COMMANDS ---
+@bot.tree.command(name="play", description="Play audio from YouTube, Spotify title, or direct link in 24/7 VC")
+@app_commands.describe(query="Song name, YouTube URL, or Spotify song title")
+async def play(interaction: discord.Interaction, query: str):
+    await interaction.response.defer()
+    guild = interaction.guild
+
+    voice_client = guild.voice_client
+    if not voice_client or not voice_client.is_connected():
+        vc_channel = guild.get_channel(PUBLIC_VC_ID)
+        if vc_channel:
+            voice_client = await vc_channel.connect(reconnect=True, self_deaf=True)
+
+    try:
+        data = await asyncio.to_thread(lambda: ytdl.extract_info(query, download=False))
+        if 'entries' in data:
+            data = data['entries'][0]
+
+        track_url = data['url']
+        track_title = data.get('title', 'Unknown Track')
+        track_duration = str(timedelta(seconds=data.get('duration', 0)))
+
+        song_info = {
+            'title': track_title,
+            'url': track_url,
+            'webpage_url': data.get('webpage_url', query),
+            'duration': track_duration,
+            'requester': interaction.user.mention
+        }
+
+        if voice_client.is_playing() or voice_client.is_paused():
+            song_queue.append(song_info)
+            embed = discord.Embed(
+                title="🎵  TRACK QUEUED",
+                description=f"**[{track_title}]({song_info['webpage_url']})**\n\n• **Duration:** `{track_duration}`\n• **Requested by:** {interaction.user.mention}",
+                color=0xFEE75C
+            )
+            embed.set_footer(text="PX 24/7 AUDIO ENGINE • PERSISTX")
+            await interaction.followup.send(embed=embed)
+        else:
+            global current_song
+            current_song = song_info
+            audio_source = discord.FFmpegPCMAudio(track_url, **FFMPEG_OPTIONS)
+            voice_client.play(audio_source, after=lambda e: play_next_song(guild))
+
+            embed = discord.Embed(
+                title="🔊  NOW PLAYING IN PUBLIC VC",
+                description=(
+                    f"**[{track_title}]({song_info['webpage_url']})**\n\n"
+                    f"• **Channel:** <#{PUBLIC_VC_ID}>\n"
+                    f"• **Duration:** `{track_duration}`\n"
+                    f"• **Status:** `Streaming 24/7`\n"
+                    f"• **Requested by:** {interaction.user.mention}"
+                ),
+                color=0x57F287
+            )
+            embed.set_footer(text="PERSISTX LUXURY AUDIO SUITE © 2026")
+            await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error loading track: `{e}`")
+
+
+@bot.tree.command(name="skip", description="Skip currently playing track")
+async def skip(interaction: discord.Interaction):
+    guild = interaction.guild
+    voice_client = guild.voice_client
+    if voice_client and voice_client.is_playing():
+        voice_client.stop()
+        await interaction.response.send_message("⏭️ Track skipped!")
+    else:
+        await interaction.response.send_message("❌ Koi track play nahi ho raha hai.", ephemeral=True)
+
+
+@bot.tree.command(name="pause", description="Pause the current song")
+async def pause(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+    if voice_client and voice_client.is_playing():
+        voice_client.pause()
+        await interaction.response.send_message("⏸️ Music paused.")
+    else:
+        await interaction.response.send_message("❌ Music already paused hai ya playing nahi hai.", ephemeral=True)
+
+
+@bot.tree.command(name="resume", description="Resume paused song")
+async def resume(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+    if voice_client and voice_client.is_paused():
+        voice_client.resume()
+        await interaction.response.send_message("▶️ Music resumed.")
+    else:
+        await interaction.response.send_message("❌ Music paused nahi hai.", ephemeral=True)
+
+
+@bot.tree.command(name="stop", description="Clear music queue and stop playing (Bot stays in VC 24/7)")
+async def stop(interaction: discord.Interaction):
+    global current_song
+    voice_client = interaction.guild.voice_client
+    song_queue.clear()
+    current_song = None
+    if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
+        voice_client.stop()
+    await interaction.response.send_message("⏹️ Music stopped and queue cleared. Bot will remain in 24/7 Public VC.")
+
+
+@bot.tree.command(name="queue", description="View songs in queue")
+async def view_queue(interaction: discord.Interaction):
+    if not current_song and len(song_queue) == 0:
+        await interaction.response.send_message("📭 Queue bilkul empty hai.", ephemeral=True)
+        return
+
+    desc = ""
+    if current_song:
+        desc += f"**Now Playing:** `{current_song['title']}` ({current_song['duration']})\n\n**Upcoming Queue:**\n"
+
+    for i, track in enumerate(song_queue[:10], 1):
+        desc += f"`{i}.` {track['title']} (`{track['duration']}`) | {track['requester']}\n"
+
+    if len(song_queue) > 10:
+        desc += f"\n*...and {len(song_queue) - 10} more songs in queue.*"
+
+    embed = discord.Embed(title="✦  PERSISTX AUDIO QUEUE  ✦", description=desc, color=0xED4245)
+    await interaction.response.send_message(embed=embed)
+
+
+# --- GENERAL UTILITY SLASH COMMANDS ---
 @bot.tree.command(name="clear", description="Clear a specific number of chat messages")
 @app_commands.describe(amount="Messages count (Max: 100)")
 async def clear(interaction: discord.Interaction, amount: int):
@@ -1346,6 +1566,12 @@ async def help_command(interaction: discord.Interaction):
             "• `/pxticketsetup` — Refresh & post dynamic product tickets\n"
             "• `/giveaway` — Host a verified clean giveaway\n"
             "• `qr` — Auto-dispenses payment scanner inside any ticket\n\n"
+            "**Music & Voice (24/7 in <#{PUBLIC_VC_ID}>)**\n"
+            "• `/play <query>` — Play YouTube/Spotify query or URL\n"
+            "• `/skip` — Skip active song\n"
+            "• `/pause` & `/resume` — Pause or resume stream\n"
+            "• `/queue` — View queued tracks\n"
+            "• `/stop` — Clear queue (Bot stays in VC 24/7)\n\n"
             "**Administration & Moderation**\n"
             "• `/clear <amount>` — Purge chat history quickly\n"
             "• `/setpx` — Auto-apply `PX | ` tag across all members\n"
@@ -1364,7 +1590,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 16. Execution Start ---
+# --- 18. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
