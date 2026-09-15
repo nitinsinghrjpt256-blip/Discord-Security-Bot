@@ -1,4 +1,5 @@
 import os
+import io
 import random
 import asyncio
 import threading
@@ -6,7 +7,7 @@ from datetime import datetime, timedelta
 from flask import Flask
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 # --- 1. Web Server (Render 24/7 Keep Alive) ---
 web_app = Flask('')
@@ -67,7 +68,7 @@ member_invited_by = {}
 user_balances = {}          
 daily_cooldowns = {}        
 channel_webhooks = {}       
-panel_message_id = None
+inactivity_warned = set()
 
 
 # --- 3. OwO Economy Helpers ---
@@ -89,7 +90,7 @@ def update_user_balance(user_id: int, amount: int):
 
 
 # --- 4. Webhook Identity Sender ---
-async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None):
+async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None, file=None):
     if not channel or channel.guild.id != MY_SERVER_ID:
         return None
     try:
@@ -106,12 +107,13 @@ async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, c
             content=content,
             embed=embed,
             view=view,
+            file=file,
             username=bot_name,
             avatar_url=avatar_url,
             wait=True
         )
     except Exception:
-        return await channel.send(content=content, embed=embed, view=view)
+        return await channel.send(content=content, embed=embed, view=view, file=file)
 
 
 # --- 5. Anti-Nuke Engine ---
@@ -146,7 +148,88 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 6. Aesthetic Ticket System ---
+# --- 6. Rating & Close Logic ---
+class TicketRatingView(discord.ui.View):
+    def __init__(self, ticket_name: str, guild: discord.Guild):
+        super().__init__(timeout=86400)
+        self.ticket_name = ticket_name
+        self.guild = guild
+
+    async def submit_rating(self, interaction: discord.Interaction, stars: int):
+        stars_display = "⭐" * stars
+        await interaction.response.send_message(
+            f"💖 **Thank you for your feedback!** Aapne PERSISTX Support ko **{stars_display}** rating di hai.",
+            ephemeral=True
+        )
+        for child in self.children:
+            child.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        close_log = self.guild.get_channel(TICKET_CLOSE_LOG_ID)
+        if close_log:
+            embed = discord.Embed(
+                title="🌟  CUSTOMER REVIEW RECEIVED",
+                description=(
+                    f"A customer submitted a rating for their closed ticket.\n\n"
+                    f"• **Ticket Name:** `#{self.ticket_name}`\n"
+                    f"• **Customer:** {interaction.user.mention} (`{interaction.user.name}`)\n"
+                    f"• **Rating Given:** {stars_display} (`{stars}/5 Stars`)\n"
+                    f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:R>"
+                ),
+                color=0xFEE75C
+            )
+            embed.set_author(name="PX CUSTOMER SATISFACTION", icon_url=self.guild.icon.url if self.guild.icon else None)
+            embed.set_footer(text="PERSISTX ENTERPRISE © 2026", icon_url=self.guild.icon.url if self.guild.icon else None)
+            embed.timestamp = datetime.utcnow()
+            await send_custom_channel_msg(close_log, "PX TICKET BOT", embed=embed)
+
+    @discord.ui.button(label="⭐", style=discord.ButtonStyle.secondary, custom_id="rate_1")
+    async def r1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 1)
+
+    @discord.ui.button(label="⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_2")
+    async def r2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 2)
+
+    @discord.ui.button(label="⭐⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_3")
+    async def r3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 3)
+
+    @discord.ui.button(label="⭐⭐⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_4")
+    async def r4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 4)
+
+    @discord.ui.button(label="⭐⭐⭐⭐⭐", style=discord.ButtonStyle.success, custom_id="rate_5")
+    async def r5(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 5)
+
+
+async def generate_transcript(channel: discord.TextChannel) -> discord.File:
+    buffer = io.StringIO()
+    buffer.write("========================================================\n")
+    buffer.write(f"           PERSISTX OFFICIAL TICKET TRANSCRIPT          \n")
+    buffer.write(f"Ticket Channel : #{channel.name}\n")
+    buffer.write(f"Export Date    : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+    buffer.write("========================================================\n\n")
+
+    messages = [msg async for msg in channel.history(limit=500, oldest_first=True)]
+    for msg in messages:
+        timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        author = f"{msg.author.name}#{msg.author.discriminator}" if msg.author.discriminator != '0' else msg.author.name
+        content = msg.clean_content or "[No text content]"
+        buffer.write(f"[{timestamp}] {author}: {content}\n")
+        if msg.attachments:
+            for att in msg.attachments:
+                buffer.write(f"    -> [Attachment]: {att.url}\n")
+        buffer.write("\n")
+
+    buffer.seek(0)
+    return discord.File(fp=io.BytesIO(buffer.getvalue().encode('utf-8')), filename=f"transcript-{channel.name}.txt")
+
+
 class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -157,17 +240,30 @@ class TicketCloseView(discord.ui.View):
         channel = interaction.channel
         user = interaction.user
 
-        await interaction.response.send_message("⏳ **Closing Ticket...** Channel 3 seconds me delete ho jayega.")
+        await interaction.response.send_message("⏳ **Closing Ticket & Generating Transcript...** Channel 5 seconds me delete ho jayega.")
+
+        ticket_creator = None
+        for target, overwrite in channel.overwrites.items():
+            if isinstance(target, discord.Member) and target.id != bot.user.id:
+                ticket_creator = target
+                break
+
+        transcript_file = None
+        try:
+            transcript_file = await generate_transcript(channel)
+        except Exception as e:
+            print(f"[TRANSCRIPT ERROR]: {e}")
 
         close_log_channel = guild.get_channel(TICKET_CLOSE_LOG_ID)
         if close_log_channel:
             close_embed = discord.Embed(
-                title="🔒  TICKET CLOSED LOG",
+                title="🔒  TICKET CLOSED & TRANSCRIPT SAVED",
                 description=(
                     f"A ticket has been permanently closed.\n\n"
                     f"• **Ticket Channel:** `#{channel.name}`\n"
+                    f"• **Opened By:** {ticket_creator.mention if ticket_creator else 'Unknown'}\n"
                     f"• **Closed By:** {user.mention} (`{user.name}`)\n"
-                    f"• **Category:** `PERSISTX TICKETS`\n"
+                    f"• **Transcript:** Attached below (`.txt`)\n"
                     f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:F>"
                 ),
                 color=0xED4245
@@ -176,19 +272,44 @@ class TicketCloseView(discord.ui.View):
             close_embed.set_footer(text="PX Security & Ticket System © 2026", icon_url=guild.icon.url if guild.icon else None)
             close_embed.timestamp = datetime.utcnow()
             try:
-                await send_custom_channel_msg(close_log_channel, "PX TICKET BOT", embed=close_embed)
+                await send_custom_channel_msg(close_log_channel, "PX TICKET BOT", embed=close_embed, file=transcript_file)
             except Exception:
                 pass
 
-        await asyncio.sleep(3)
+        if ticket_creator:
+            try:
+                dm_embed = discord.Embed(
+                    title="✦  PERSISTX • TICKET CLOSED RECEIPT  ✦",
+                    description=(
+                        f"Hello **{ticket_creator.name}**,\n\n"
+                        f"Aapka support ticket (`#{channel.name}`) close kar diya gaya hai.\n\n"
+                        f"• **Server:** `{guild.name}`\n"
+                        f"• **Closed By:** `{user.name}`\n"
+                        f"• **Status:** `Resolved / Completed`\n\n"
+                        f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
+                        f"  ⭐ **RATE OUR ASSISTANCE**\n"
+                        f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
+                        f"Aapko hamari customer service kaisi lagi? Niche diye gaye buttons se rating zaroor dein! 👇"
+                    ),
+                    color=0xED4245
+                )
+                dm_embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
+                dm_embed.set_footer(text="PX STORE © 2026 • Powered by PERSISTX", icon_url=guild.icon.url if guild.icon else None)
+                dm_embed.timestamp = datetime.utcnow()
+                rating_view = TicketRatingView(channel.name, guild)
+                await ticket_creator.send(embed=dm_embed, view=rating_view)
+            except Exception:
+                pass
+
+        await asyncio.sleep(4)
         try:
             await channel.delete(reason=f"Ticket closed by {user.name}")
         except Exception as e:
             print(f"Error deleting ticket channel: {e}")
 
 
+# --- 7. Ticket Generator ---
 def generate_ticket_options(guild: discord.Guild):
-    """Guaranteed ALL 12 PC Panels + ALL 7 Android Injectors + 4 Services"""
     pc_options = []
     android_options = []
 
@@ -196,7 +317,6 @@ def generate_ticket_options(guild: discord.Guild):
         pc_cat = guild.get_channel(PC_CATEGORY_ID)
         android_cat = guild.get_channel(ANDROID_CATEGORY_ID)
 
-        # Name fallback check
         if not pc_cat or not android_cat:
             for cat in guild.categories:
                 c_name = cat.name.lower().replace(" ", "")
@@ -205,7 +325,6 @@ def generate_ticket_options(guild: discord.Guild):
                 elif "android" in c_name or "injector" in c_name:
                     android_cat = cat
 
-        # 1. Pure PC Panels
         if pc_cat and isinstance(pc_cat, discord.CategoryChannel):
             for ch in pc_cat.text_channels:
                 clean = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().title()
@@ -217,7 +336,6 @@ def generate_ticket_options(guild: discord.Guild):
                     )
                 )
 
-        # 2. Pure Android Injectors
         if android_cat and isinstance(android_cat, discord.CategoryChannel):
             for ch in android_cat.text_channels:
                 clean = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().title()
@@ -229,7 +347,6 @@ def generate_ticket_options(guild: discord.Guild):
                     )
                 )
 
-    # 3. Mandatory Service Options
     mandatory_services = [
         discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
         discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
@@ -237,9 +354,8 @@ def generate_ticket_options(guild: discord.Guild):
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
 
-    slots_for_products = 25 - len(mandatory_services) # 21 slots
+    slots_for_products = 25 - len(mandatory_services)
     combined_products = (pc_options + android_options)[:slots_for_products]
-
     return combined_products + mandatory_services
 
 
@@ -298,7 +414,7 @@ class DynamicTicketSelect(discord.ui.Select):
                     f"• **Ticket Channel:** {ticket_channel.mention} (`#{channel_name}`)\n"
                     f"• **Ticket ID:** `#{current_ticket_num}`\n"
                     f"• **User:** `{user.name}` (`{user.id}`)\n"
-                    f"• **Selected Product:** `{selected_product}`\n"
+                    f"• **Selected Item:** `{selected_product}`\n"
                     f"• **Created At:** <t:{int(datetime.utcnow().timestamp())}:F>"
                 ),
                 color=0x57F287
@@ -312,30 +428,38 @@ class DynamicTicketSelect(discord.ui.Select):
             except Exception:
                 pass
 
+        # Reason categorization logic
+        if "FREE" in selected_product:
+            reason_text = "Free Trial / Daily Key Access Request"
+        elif "SUPPORT" in selected_product:
+            reason_text = "Technical Help & Troubleshooting Support"
+        elif "CUSTOM" in selected_product:
+            reason_text = "Private Branded Panel Development Order"
+        elif "RESELLER" in selected_product:
+            reason_text = "Bulk Keys & Reseller Business Inquiry"
+        else:
+            reason_text = f"Purchase Order for {selected_product}"
+
+        # Clean, Professional & Compact Ticket Welcome Card
         embed = discord.Embed(
-            title="✦  PERSISTX • ORDER & SUPPORT TICKET  ✦",
+            title="✦  PERSISTX • SUPPORT DESK  ✦",
             description=(
-                f"Hello {user.mention}, thank you for reaching out!\n"
-                f"> 🎫 **Ticket ID:** `#{current_ticket_num}`\n"
-                f"> 📦 **Selected Product:** `{selected_product}`\n"
-                f"> ⏱️ **Delivery Status:** `Instant Auto-Dispatch / Admin Verification`\n\n"
-                f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-                f"  💳 **PAYMENT & DETAILS**\n"
-                f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
-                f"• **BINANCE PAY ID:** `Releasing Soon` (NAME: `PERSISTX`)\n"
-                f"• **UPI / QR SCAN:** *Scan the official QR code below.*\n\n"
-                f"📌 **Next Steps:**\n"
-                f"1. Agar **Buy** karna hai toh payment karke screenshot yahan bhejein.\n"
-                f"2. Agar **Free Panel Key** ya **Support** chahiye toh message yahan likhein.\n\n"
-                f"💡 *Tip: Chat me kabhi bhi **qr** likhenge toh instant payment QR code aa jayega!* 🚀\n\n"
+                f"Welcome {user.mention}! Your private ticket is ready.\n\n"
+                f"• **Ticket ID:** `#{current_ticket_num}`\n"
+                f"• **Item Selected:** `{selected_product}`\n"
+                f"• **Ticket Reason:** `{reason_text}`\n\n"
+                f"╭──────────────────────────╮\n"
+                f"  📌 **Quick Actions & Info**\n"
+                f"╰──────────────────────────╯\n"
+                f"• **Buy Product:** Type **`qr`** to get payment code.\n"
+                f"• **Support / Key:** State your query below.\n\n"
                 f"*Staff and <@{MY_USER_ID}> will assist you shortly!*"
             ),
             color=0xED4245
         )
         embed.set_thumbnail(url=user.display_avatar.url)
-        embed.set_image(url=QR_IMAGE_URL)
         embed.set_author(name="PX TICKET BOT", icon_url=guild.icon.url if guild.icon else None)
-        embed.set_footer(text="PX STORE © 2026 • Powered by PERSISTX", icon_url=guild.icon.url if guild.icon else None)
+        embed.set_footer(text="PX STORE © 2026 • Verified Ticket", icon_url=guild.icon.url if guild.icon else None)
         embed.timestamp = datetime.utcnow()
 
         close_view = TicketCloseView()
@@ -397,12 +521,76 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
 
     try:
         await t_channel.send(embed=embed, view=view)
-        print("[AUTO-SYNC] Fresh panel posted with all channels including FPS Booster!", flush=True)
+        print("[AUTO-SYNC] Fresh panel posted!", flush=True)
     except Exception as e:
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 7. Mines Mini-Game View ---
+# --- 8. Inactivity Ghost Tickets Auto-Close Loop ---
+@tasks.loop(minutes=30)
+async def ghost_tickets_cleaner():
+    guild = bot.get_guild(MY_SERVER_ID)
+    if not guild:
+        return
+
+    category = guild.get_channel(TICKET_CATEGORY_ID)
+    if not category or not isinstance(category, discord.CategoryChannel):
+        return
+
+    now = datetime.utcnow()
+
+    for channel in category.text_channels:
+        if not any(channel.name.endswith(f"-{num}") for num in range(200, 10000)):
+            continue
+
+        try:
+            last_msg = None
+            async for msg in channel.history(limit=1):
+                last_msg = msg
+                break
+
+            if not last_msg:
+                continue
+
+            idle_duration = now - last_msg.created_at.replace(tzinfo=None)
+
+            if idle_duration > timedelta(hours=24) and channel.id not in inactivity_warned:
+                inactivity_warned.add(channel.id)
+                warn_embed = discord.Embed(
+                    title="⚠️  INACTIVITY WARNING NOTICE",
+                    description=(
+                        "Is ticket me pichle **24 ghante** se koi message nahi aaya hai.\n"
+                        "Agar agle **6 ghante** me koi response nahi milta hai, toh yeh ticket automatically close ho jayega.\n\n"
+                        "*Aap message bhej kar is timer ko reset kar sakte hain!*"
+                    ),
+                    color=0xFEE75C
+                )
+                warn_embed.set_footer(text="PX Automation System • Ghost Ticket Clean")
+                await send_custom_channel_msg(channel, "PX TICKET BOT", embed=warn_embed)
+
+            elif idle_duration > timedelta(hours=30) and channel.id in inactivity_warned:
+                transcript_file = await generate_transcript(channel)
+                close_log = guild.get_channel(TICKET_CLOSE_LOG_ID)
+                if close_log:
+                    auto_embed = discord.Embed(
+                        title="🔒  TICKET AUTO-CLOSED (INACTIVITY)",
+                        description=(
+                            f"Ticket `#{channel.name}` ko 30 ghante inactivity ki wajah se auto-close kiya gaya.\n"
+                            f"• **Transcript:** Attached below\n"
+                            f"• **Timestamp:** <t:{int(now.timestamp())}:F>"
+                        ),
+                        color=0xED4245
+                    )
+                    await send_custom_channel_msg(close_log, "PX TICKET BOT", embed=auto_embed, file=transcript_file)
+
+                inactivity_warned.discard(channel.id)
+                await channel.delete(reason="Auto-closed due to inactivity (30h)")
+
+        except Exception as e:
+            print(f"[GHOST CLEANER ERROR in #{channel.name}]: {e}")
+
+
+# --- 9. Mines Mini-Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -522,7 +710,7 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 8. Bot Setup ---
+# --- 10. Bot Setup ---
 class SecurityBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=["!", "/"], intents=intents)
@@ -533,7 +721,7 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 9. Event Listeners ---
+# --- 11. Event Listeners ---
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -556,6 +744,9 @@ async def on_ready():
             invites_cache[guild.id] = {invite.code: invite.uses for invite in guild_invites}
         except Exception:
             pass
+
+        if not ghost_tickets_cleaner.is_running():
+            ghost_tickets_cleaner.start()
 
         await force_fresh_ticket_panel(guild)
 
@@ -585,7 +776,7 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
-        if any(channel.name.endswith(f"-{num}") for num in range(200, 1000)):
+        if any(channel.name.endswith(f"-{num}") for num in range(200, 10000)):
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
 
@@ -716,11 +907,14 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 10. Message Event (Auto-QR in Tickets, OwO & Commands) ---
+# --- 12. Message Event (Auto-QR in Tickets, OwO & Commands) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
         return
+
+    if hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID:
+        inactivity_warned.discard(message.channel.id)
 
     content = message.content.strip()
     lowered = content.lower()
@@ -728,7 +922,7 @@ async def on_message(message):
     # 1. AUTO-QR TRIGGER IN TICKETS
     is_in_ticket = (
         hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID
-    ) or any(message.channel.name.endswith(f"-{num}") for num in range(200, 1000))
+    ) or any(message.channel.name.endswith(f"-{num}") for num in range(200, 10000))
 
     if is_in_ticket and lowered in ["qr", "send qr", "!qr", "qr code", "payment qr", "scanner"]:
         qr_embed = discord.Embed(
@@ -762,7 +956,7 @@ async def on_message(message):
             return
 
         await force_fresh_ticket_panel(message.guild)
-        await message.channel.send("✅ Dynamic ticket panel successfully updated/sent!")
+        await message.channel.send("✅ Dynamic ticket panel successfully refreshed & sent!")
         return
 
     # 3. OwO Mini-Games (Channel ID: 1548770349351575632)
@@ -900,7 +1094,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 11. Core Slash Command ---
+# --- 13. Slash Commands ---
 @bot.tree.command(name="pxticketsetup", description="Deploy dynamic ticket panel reading from categories")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -913,7 +1107,7 @@ async def pxticketsetup(interaction: discord.Interaction):
     await interaction.followup.send("✅ Dynamic ticket panel successfully refreshed & sent!", ephemeral=True)
 
 
-# --- 12. Execution Start ---
+# --- 14. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
