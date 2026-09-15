@@ -14,7 +14,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Complete Master System is Online 24/7!"
+    return "PX Master Security & Store Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -35,11 +35,6 @@ intents.reactions = True
 
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977
-
-# Whitelisted Bots (Jinko Anti-Nuke touch nahi karega)
-WHITELISTED_BOT_IDS = [
-    1549425984795574312  # Aapka naya bot
-]
 
 # Channels
 WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
@@ -81,7 +76,7 @@ active_giveaways = set()
 async def generate_transcript(channel: discord.TextChannel) -> discord.File:
     buffer = io.StringIO()
     buffer.write("========================================================\n")
-    buffer.write(f"           PERSISTX OFFICIAL TICKET TRANSCRIPT          \n")
+    buffer.write("           PERSISTX OFFICIAL TICKET TRANSCRIPT          \n")
     buffer.write(f"Ticket Channel : #{channel.name}\n")
     buffer.write(f"Export Date    : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
     buffer.write("========================================================\n\n")
@@ -556,7 +551,7 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 9. Inactivity Ghost Tickets Auto-Close Loop ---
+# --- 9. Inactivity Cleaner Task ---
 @tasks.loop(minutes=30)
 async def ghost_tickets_cleaner():
     guild = bot.get_guild(MY_SERVER_ID)
@@ -752,7 +747,7 @@ async def global_slash_check(interaction: discord.Interaction):
 async def on_ready():
     print(f"\n==========================================", flush=True)
     print(f"[ONLINE] Logged in as: {bot.user.name} ({bot.user.id})", flush=True)
-    print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
+    print(f"[SECURE] Strict Anti-Nuke Active for Guild ID: {MY_SERVER_ID}", flush=True)
     print(f"==========================================\n", flush=True)
 
     guild = bot.get_guild(MY_SERVER_ID)
@@ -823,21 +818,15 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 13. Member Events (Anti-Nuke Whitelist, Welcomer & Inviter) ---
+# --- 13. Member Events (STRICT ANTI-NUKE RESTORED: NO BOTS ALLOWED) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
         return
     guild = member.guild
 
-    # --- BOT ADD SECURITY (Whitelist & Owner Protection) ---
+    # --- ZERO-TOLERANCE STRICT ANTI-BOT SYSTEM ---
     if member.bot:
-        # Rule A: Whitelisted bot ID check (Aapka naya bot)
-        if member.id in WHITELISTED_BOT_IDS:
-            print(f"[WHITELIST] Allowed Bot Joined: {member.name} ({member.id})", flush=True)
-            return
-
-        # Rule B: Owner invite check
         inviter = None
         try:
             async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
@@ -846,20 +835,19 @@ async def on_member_join(member):
         except Exception:
             pass
 
-        if inviter and (inviter.id == MY_USER_ID or inviter.id == guild.owner_id):
-            print(f"[ALLOWED] Bot {member.name} added by Owner ({inviter.name})", flush=True)
-            return
-
-        # Unauthorized bot punishment
-        if inviter:
-            await execute_antinuke_punishment(guild, inviter, f"Unauthorized Bot Added: {member.name}")
+        # Bot ko instant ban karo
         try:
-            await member.ban(reason="Anti-Nuke: Unauthorized Bot")
-        except Exception:
-            pass
+            await member.ban(reason="Anti-Nuke: Unauthorized Bot Addition Blocked")
+            print(f"[STRICT ANTI-NUKE] Blocked & Banned Bot: {member.name} ({member.id})", flush=True)
+        except Exception as e:
+            print(f"[BOT BAN ERROR]: {e}", flush=True)
+
+        # Adder/Inviter par instant Anti-Nuke punishment
+        if inviter:
+            await execute_antinuke_punishment(guild, inviter, f"Attempted to Add Bot: {member.name}")
         return
 
-    # Normal Member Join Logic
+    # Normal Members Auto PX Tag
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
@@ -867,6 +855,7 @@ async def on_member_join(member):
         except Exception:
             pass
 
+    # Invite Logger
     inviter = None
     try:
         current_invites = await guild.invites()
