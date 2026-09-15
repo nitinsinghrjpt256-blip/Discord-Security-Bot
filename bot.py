@@ -36,6 +36,11 @@ intents.reactions = True
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977
 
+# Whitelisted Bots (Jinko Anti-Nuke touch nahi karega)
+WHITELISTED_BOT_IDS = [
+    1549425984795574312  # Aapka naya bot
+]
+
 # Channels
 WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
 INVITE_LOG_CHANNEL_ID = 1548745613640859729    # PX INVITER BOT
@@ -251,7 +256,7 @@ def get_user_balance(user_id: int) -> int:
 
 def format_balance(user_id: int) -> str:
     if user_id == MY_USER_ID:
-        return "1,432,567"
+        return "Unlimited (∞)"
     return f"{get_user_balance(user_id):,}"
 
 def update_user_balance(user_id: int, amount: int):
@@ -752,7 +757,6 @@ async def on_ready():
 
     guild = bot.get_guild(MY_SERVER_ID)
     if guild:
-        # DIRECT GUILD SLASH SYNC (Eliminates Delay and Rate Limits)
         try:
             guild_target = discord.Object(id=MY_SERVER_ID)
             bot.tree.copy_global_to(guild=guild_target)
@@ -819,23 +823,43 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 13. Member Events (Welcomer, Inviter & Leave) ---
+# --- 13. Member Events (Anti-Nuke Whitelist, Welcomer & Inviter) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
         return
     guild = member.guild
 
+    # --- BOT ADD SECURITY (Whitelist & Owner Protection) ---
     if member.bot:
-        async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
-            inviter = entry.user
-            await execute_antinuke_punishment(guild, inviter, f"Bot Added: {member.name}")
-            try:
-                await member.ban(reason="Anti-Nuke: Unauthorized Bot")
-            except Exception:
-                pass
+        # Rule A: Whitelisted bot ID check (Aapka naya bot)
+        if member.id in WHITELISTED_BOT_IDS:
+            print(f"[WHITELIST] Allowed Bot Joined: {member.name} ({member.id})", flush=True)
             return
 
+        # Rule B: Owner invite check
+        inviter = None
+        try:
+            async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
+                inviter = entry.user
+                break
+        except Exception:
+            pass
+
+        if inviter and (inviter.id == MY_USER_ID or inviter.id == guild.owner_id):
+            print(f"[ALLOWED] Bot {member.name} added by Owner ({inviter.name})", flush=True)
+            return
+
+        # Unauthorized bot punishment
+        if inviter:
+            await execute_antinuke_punishment(guild, inviter, f"Unauthorized Bot Added: {member.name}")
+        try:
+            await member.ban(reason="Anti-Nuke: Unauthorized Bot")
+        except Exception:
+            pass
+        return
+
+    # Normal Member Join Logic
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
@@ -1008,11 +1032,11 @@ async def on_message(message):
                 await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"⏳ Next claim in `{hours}h {minutes}m`.")
                 return
 
-            reward = random.randint(5000, 15000)
+            reward = 777
             update_user_balance(message.author.id, reward)
             daily_cooldowns[message.author.id] = now
             display_bal = format_balance(message.author.id)
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎁 **{message.author.display_name}**, aapko **{reward:,}** OwO Coins mile! Total: **{display_bal}**")
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎁 **{message.author.display_name}**, aapko daily **777** OwO Coins mile! Total: **{display_bal}**")
 
         elif subcmd in ["mine", "mines"]:
             if len(parts) < 3:
@@ -1115,8 +1139,6 @@ async def on_message(message):
 
 
 # --- 15. ALL ACTIVE SLASH COMMANDS SUITE ---
-
-# 1. Ticket Setup Command
 @bot.tree.command(name="pxticketsetup", description="Deploy/Refresh the dynamic store ticket panel")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1127,7 +1149,6 @@ async def pxticketsetup(interaction: discord.Interaction):
     await interaction.followup.send("✅ Dynamic ticket panel successfully refreshed & deployed!", ephemeral=True)
 
 
-# 2. Professional Giveaway Command
 @bot.tree.command(name="giveaway", description="Launch an official PERSISTX Giveaway event")
 @app_commands.describe(prize="Inam ka naam", duration_minutes="Kitne minute chalega", winners="Kitne winners honge")
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
@@ -1214,9 +1235,8 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         print(f"[GIVEAWAY END ERROR]: {e}")
 
 
-# 3. Chat Purge / Clear Command
 @bot.tree.command(name="clear", description="Clear a specific number of chat messages")
-@app_commands.describe(amount="Messages ki sankhya (Max: 100)")
+@app_commands.describe(amount="Messages count (Max: 100)")
 async def clear(interaction: discord.Interaction, amount: int):
     if not interaction.user.guild_permissions.manage_messages and interaction.user.id != MY_USER_ID:
         await interaction.response.send_message("❌ Manage Messages permission required!", ephemeral=True)
@@ -1226,14 +1246,12 @@ async def clear(interaction: discord.Interaction, amount: int):
     await interaction.followup.send(f"🧹 Cleaned `{len(deleted)}` messages successfully!", ephemeral=True)
 
 
-# 4. Latency / Ping Command
 @bot.tree.command(name="ping", description="Check bot latency and API heartbeat")
 async def ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
     await interaction.response.send_message(f"🏓 **Pong!** WebSocket Latency: `{latency}ms` | System: `Online 24/7`")
 
 
-# 5. Bulk PX Nickname Updater
 @bot.tree.command(name="setpx", description="Apply PX | prefix to all non-tagged server members")
 async def setpx(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
@@ -1257,7 +1275,6 @@ async def setpx(interaction: discord.Interaction):
     await interaction.followup.send(f"✅ Updated `{changed}` members with `PX | ` prefix.")
 
 
-# 6. OwO Slash Group
 class OwOGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="owo", description="OwO Mini-Game & Economy Slash System")
@@ -1295,7 +1312,6 @@ async def owo_mine_slash(interaction: discord.Interaction, amount: int):
 bot.tree.add_command(owo_group)
 
 
-# 7. Help & Command Guide
 @bot.tree.command(name="help", description="Display full PERSISTX command list")
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(
@@ -1311,7 +1327,7 @@ async def help_command(interaction: discord.Interaction):
             "• `/ping` — Check bot latency\n\n"
             "**Economy & Games (In <#{OWO_CHANNEL_ID}>)**\n"
             "• `owo cash` / `/owo cash` — View coin reserves\n"
-            "• `owo daily` — Claim 24h bonus coins\n"
+            "• `owo daily` — Claim daily 777 bonus coins\n"
             "• `owo mine <bet>` / `/owo mine <bet>` — Interactive 3x3 Mines\n"
             "• `owo cf <bet> [h/t]` — 50/50 Coin Flip\n"
             "• `owo s <bet>` — Casino Slots\n"
