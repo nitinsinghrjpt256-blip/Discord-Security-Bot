@@ -13,7 +13,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Complete All-in-One Master Bot is Online 24/7!"
+    return "PX Complete Dynamic Ticket & OwO Master Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -24,7 +24,7 @@ def keep_alive():
     t.start()
 
 
-# --- 2. Intents & Core Variables ---
+# --- 2. Intents & Core Setup ---
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -46,8 +46,11 @@ RULE_CHANNEL_ID = 1525203386025119807
 
 TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
 TICKET_CATEGORY_ID = 1525181999646507118       
-QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png"
 
+# Product Categories jo Dropdown me auto-reflect hongi
+SYNC_CATEGORY_IDS = [1525182001097998345, 1525182001097998339]
+
+QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png"
 ticket_counter = 207
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
@@ -58,6 +61,7 @@ member_invited_by = {}
 user_balances = {}          
 daily_cooldowns = {}        
 channel_webhooks = {}       
+panel_message_id = None
 
 
 # --- 3. OwO Economy Helpers ---
@@ -138,7 +142,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 6. Aesthetic Ticket System ---
+# --- 6. Aesthetic Ticket System & Dynamic Generator ---
 class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -153,28 +157,49 @@ class TicketCloseView(discord.ui.View):
             print(f"Error deleting ticket channel: {e}")
 
 
-TICKET_OPTIONS = [
-    discord.SelectOption(label="PC PANEL • FULL VIP (EXE)", description="Aimkill, Headshot, Silent Aim, ESP - PC", emoji="💻"),
-    discord.SelectOption(label="PC PANEL • STREAMER BYPASS", description="Stream-Proof undetected bypass for PC", emoji="🖥️"),
-    discord.SelectOption(label="PC PANEL • INTERNAL INJECTION", description="Ultra-smooth internal memory panel", emoji="⚡"),
-    discord.SelectOption(label="ANDROID INJECTOR • ROOT / NON-ROOT", description="Auto Headshot, Aimlock, 32/64 Bit Android", emoji="📱"),
-    discord.SelectOption(label="ANDROID INJECTOR • LIB BYPASS VIP", description="100% Main ID Safe Lib Memory Injector", emoji="🛡️"),
-    discord.SelectOption(label="ANDROID INJECTOR • EMOTE & VAULT", description="Rare bundles & all emotes unlock injector", emoji="✨"),
-    discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
-    discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
-    discord.SelectOption(label="FF ID MARKET • BUY / SELL", description="Verified high-level Free Fire ID deals", emoji="🛒"),
-    discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
-    discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct support from Super Admin PERSISTX", emoji="🆘")
-]
+def generate_ticket_options(guild: discord.Guild):
+    """Channels from Image 2 & 3 categories + Mandatory Custom & Support options"""
+    options = []
+    
+    # 1. Scrape channels from both categories
+    if guild:
+        for cat_id in SYNC_CATEGORY_IDS:
+            cat = guild.get_channel(cat_id)
+            if cat and isinstance(cat, discord.CategoryChannel):
+                for ch in cat.text_channels:
+                    # Clean clean display title
+                    clean_name = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().upper()
+                    if clean_name:
+                        emoji = "📱" if "APK" in clean_name or "MOD" in clean_name or "INJECTOR" in clean_name else "💻"
+                        options.append(
+                            discord.SelectOption(
+                                label=clean_name[:100],
+                                description=f"Instant purchase & key for #{ch.name}"[:100],
+                                emoji=emoji
+                            )
+                        )
 
-class TicketSelect(discord.ui.Select):
-    def __init__(self):
+    # 2. Mandatory Core Features
+    mandatory_options = [
+        discord.SelectOption(label="FREE PANEL • TRIAL / DAILY KEY", description="Get your free trial panel access key", emoji="🆓"),
+        discord.SelectOption(label="RESELLER PANEL • BULK KEYS", description="Start your own panel reselling business", emoji="🤝"),
+        discord.SelectOption(label="CUSTOM PANEL DEVELOPMENT", description="Order private branded panel with your name", emoji="⚙️"),
+        discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
+    ]
+    
+    # Discord limit is 25 items
+    combined = options[:21] + mandatory_options
+    return combined[:25]
+
+
+class DynamicTicketSelect(discord.ui.Select):
+    def __init__(self, options):
         super().__init__(
-            placeholder="Select PC Panel or Android Injector... 🛍️",
+            placeholder="Select Panel, Injector, or Support... 🛍️",
             min_values=1,
             max_values=1,
-            options=TICKET_OPTIONS,
-            custom_id="px_ticket_select_menu"
+            options=options,
+            custom_id="px_dynamic_ticket_menu"
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -226,7 +251,7 @@ class TicketSelect(discord.ui.Select):
                 f"• **UPI / QR SCAN:** *Scan the official QR code below.*\n\n"
                 f"📌 **Next Steps:**\n"
                 f"1. Agar **Buy** karna hai toh payment karke screenshot yahan bhejein.\n"
-                f"2. Agar **Free Panel Key** ya **Support** chahiye toh message type karein.\n\n"
+                f"2. Agar **Free Panel Key** ya **Support** chahiye toh yahan message type karein.\n\n"
                 f"*Staff and <@{MY_USER_ID}> will assist you shortly!*"
             ),
             color=0xED4245
@@ -241,10 +266,10 @@ class TicketSelect(discord.ui.Select):
         await interaction.followup.send(f"✅ Ticket create ho gaya: {ticket_channel.mention}", ephemeral=True)
 
 
-class TicketSelectView(discord.ui.View):
-    def __init__(self):
+class DynamicTicketView(discord.ui.View):
+    def __init__(self, options):
         super().__init__(timeout=None)
-        self.add_item(TicketSelect())
+        self.add_item(DynamicTicketSelect(options))
 
 
 def get_ticket_panel_embed(guild):
@@ -268,6 +293,43 @@ def get_ticket_panel_embed(guild):
     embed.set_author(name="PX TICKET KING • PERSISTX", icon_url=guild.icon.url if guild.icon else None)
     embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Store", icon_url=guild.icon.url if guild.icon else None)
     return embed
+
+
+async def update_ticket_panel(guild: discord.Guild):
+    """Sync dropdown options if channels in either category change"""
+    global panel_message_id
+    t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
+    if not t_channel:
+        return
+
+    options = generate_ticket_options(guild)
+    view = DynamicTicketView(options)
+    embed = get_ticket_panel_embed(guild)
+
+    try:
+        if panel_message_id:
+            try:
+                msg = await t_channel.fetch_message(panel_message_id)
+                await msg.edit(embed=embed, view=view)
+                print("[AUTO-SYNC] Panel updated dynamically with new channels!", flush=True)
+                return
+            except Exception:
+                pass
+
+        # If message not saved in memory, find the last posted bot panel
+        async for msg in t_channel.history(limit=10):
+            if msg.author.id == bot.user.id and len(msg.embeds) > 0:
+                panel_message_id = msg.id
+                await msg.edit(embed=embed, view=view)
+                print("[AUTO-SYNC] Panel message edited with fresh options!", flush=True)
+                return
+
+        # If not found at all, send a fresh one
+        new_msg = await t_channel.send(embed=embed, view=view)
+        panel_message_id = new_msg.id
+        print("[AUTO-SYNC] Fresh panel posted!", flush=True)
+    except Exception as e:
+        print(f"[PANEL UPDATE ERROR]: {e}", flush=True)
 
 
 # --- 7. Mines Mini-Game View ---
@@ -390,13 +452,12 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 8. Bot Class & Startup Hook ---
+# --- 8. Bot Setup ---
 class SecurityBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=["!", "/"], intents=intents)
 
     async def setup_hook(self):
-        self.add_view(TicketSelectView())
         self.add_view(TicketCloseView())
 
 bot = SecurityBot()
@@ -410,88 +471,68 @@ async def on_ready():
     print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
     print(f"==========================================\n", flush=True)
 
-    try:
-        guild_obj = discord.Object(id=MY_SERVER_ID)
-        bot.tree.copy_global_to(guild=guild_obj)
-        synced = await bot.tree.sync(guild=guild_obj)
-        print(f"[SLASH-SYNC] Synced {len(synced)} commands directly to Guild!", flush=True)
-    except Exception as e:
-        print(f"[SLASH-SYNC ERROR]: {e}", flush=True)
-
-    for guild in list(bot.guilds):
-        if guild.id != MY_SERVER_ID:
-            await guild.leave()
-        else:
-            try:
-                guild_invites = await guild.invites()
-                invites_cache[guild.id] = {invite.code: invite.uses for invite in guild_invites}
-            except Exception:
-                pass
-
-            # Auto-deploy Ticket Panel on bot start if not present
-            try:
-                t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
-                if t_channel:
-                    history = [msg async for msg in t_channel.history(limit=5)]
-                    already_posted = any(msg.author.id == bot.user.id and len(msg.embeds) > 0 for msg in history)
-                    if not already_posted:
-                        embed = get_ticket_panel_embed(guild)
-                        view = TicketSelectView()
-                        await t_channel.send(embed=embed, view=view)
-                        print(f"[AUTO-DEPLOY] Ticket panel posted in #{t_channel.name}!", flush=True)
-            except Exception as e:
-                print(f"[AUTO-DEPLOY ERROR]: {e}", flush=True)
-
-
-@bot.event
-async def on_guild_join(guild):
-    if guild.id != MY_SERVER_ID:
+    guild = bot.get_guild(MY_SERVER_ID)
+    if guild:
         try:
-            for channel in guild.text_channels:
-                if channel.permissions_for(guild.me).send_messages:
-                    await channel.send(ACCESS_DENIED_MSG)
-                    break
+            guild_obj = discord.Object(id=MY_SERVER_ID)
+            bot.tree.copy_global_to(guild=guild_obj)
+            synced = await bot.tree.sync(guild=guild_obj)
+            print(f"[SLASH-SYNC] Synced {len(synced)} commands directly to Guild!", flush=True)
+        except Exception as e:
+            print(f"[SLASH-SYNC ERROR]: {e}", flush=True)
+
+        try:
+            guild_invites = await guild.invites()
+            invites_cache[guild.id] = {invite.code: invite.uses for invite in guild_invites}
         except Exception:
             pass
-        await guild.leave()
 
+        # Auto-update/post panel on start
+        await update_ticket_panel(guild)
 
-@bot.tree.interaction_check
-async def global_slash_check(interaction: discord.Interaction):
-    if not interaction.guild or interaction.guild.id != MY_SERVER_ID:
-        await interaction.response.send_message(ACCESS_DENIED_MSG, ephemeral=True)
-        return False
-    return True
+    for g in list(bot.guilds):
+        if g.id != MY_SERVER_ID:
+            await g.leave()
 
 
 @bot.event
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
-
-    name_lower = channel.name.lower()
-    keywords = ["pc-panel", "pcpanel", "android", "injector", "free-key", "panel-key"]
-    
-    if any(k in name_lower for k in keywords) and channel.category_id != TICKET_CATEGORY_ID:
-        target_category = channel.guild.get_channel(TICKET_CATEGORY_ID)
-        if target_category and isinstance(target_category, discord.CategoryChannel):
-            try:
-                await channel.edit(category=target_category, sync_permissions=True, reason="Auto-moved to Ticket category")
-                print(f"[AUTO-SYNC] Moved channel #{channel.name} into Ticket Category!", flush=True)
-            except Exception as e:
-                print(f"[AUTO-SYNC ERROR]: {e}", flush=True)
+    # Agar in dono categories me naya channel bana, panel auto update karein
+    if channel.category_id in SYNC_CATEGORY_IDS:
+        await asyncio.sleep(1)
+        await update_ticket_panel(channel.guild)
 
 
 @bot.event
 async def on_guild_channel_delete(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
+    
+    # Agar channel product category se tha, dropdown se turant hatayein
+    if channel.category_id in SYNC_CATEGORY_IDS:
+        await asyncio.sleep(1)
+        await update_ticket_panel(channel.guild)
+        return
+
+    # Anti-Nuke rule
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
         if "ticket-" in channel.name.lower():
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
+
+
+@bot.event
+async def on_guild_channel_update(before, after):
+    if after.guild.id != MY_SERVER_ID:
+        return
+    # Channel rename hone par panel dropdown update
+    if after.category_id in SYNC_CATEGORY_IDS and before.name != after.name:
+        await update_ticket_panel(after.guild)
+
 
 @bot.event
 async def on_guild_role_delete(role):
@@ -613,7 +654,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 10. Message Event (OwO Mini-Games & Text Setup Fallback) ---
+# --- 10. Message Event (OwO & Text Commands) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -622,7 +663,6 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # Direct Text Fallback for Ticket Setup
     if lowered in ["!pxticketsetup", "!ticketsetup", "/pxticketsetup"]:
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -632,18 +672,10 @@ async def on_message(message):
             await message.channel.send("❌ Sirf Administrator use kar sakte hain!")
             return
 
-        t_channel = message.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
-        if not t_channel:
-            await message.channel.send(f"❌ Ticket Channel `{TICKET_PANEL_CHANNEL_ID}` nahi mila!")
-            return
-
-        embed = get_ticket_panel_embed(message.guild)
-        view = TicketSelectView()
-        await t_channel.send(embed=embed, view=view)
-        await message.channel.send(f"✅ Ticket panel sent to {t_channel.mention}!")
+        await update_ticket_panel(message.guild)
+        await message.channel.send("✅ Dynamic ticket panel successfully updated/sent!")
         return
 
-    # OwO System
     if lowered.startswith("owo") or lowered.startswith("px owo"):
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -779,7 +811,7 @@ async def on_message(message):
 
 
 # --- 11. Slash Commands Suite ---
-@bot.tree.command(name="pxticketsetup", description="Deploy official PC Panel & Android Injector ticket panel")
+@bot.tree.command(name="pxticketsetup", description="Deploy dynamic ticket panel reading from categories")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
@@ -787,18 +819,8 @@ async def pxticketsetup(interaction: discord.Interaction):
         await interaction.followup.send("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
         return
 
-    channel = interaction.guild.get_channel(TICKET_PANEL_CHANNEL_ID)
-    if not channel:
-        await interaction.followup.send(f"❌ Ticket Channel `{TICKET_PANEL_CHANNEL_ID}` nahi mila! Check permissions.", ephemeral=True)
-        return
-
-    try:
-        embed = get_ticket_panel_embed(interaction.guild)
-        view = TicketSelectView()
-        await channel.send(embed=embed, view=view)
-        await interaction.followup.send(f"✅ Aesthetic ticket panel successfully sent to {channel.mention}!", ephemeral=True)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Error sending panel: `{e}`", ephemeral=True)
+    await update_ticket_panel(interaction.guild)
+    await interaction.followup.send("✅ Dynamic ticket panel successfully updated!", ephemeral=True)
 
 
 class OwOGroup(app_commands.Group):
@@ -837,7 +859,7 @@ async def owo_mine_slash(interaction: discord.Interaction, amount: int):
 bot.tree.add_command(owo_group)
 
 
-@bot.tree.command(name="setpx", description="Bulk PX tag apply")
+@bot.tree.command(name="setpx", description="Bulk apply PX | prefix to members")
 async def setpx(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
         return
