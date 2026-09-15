@@ -15,7 +15,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Master Security, Store & Music Bot is Online 24/7!"
+    return "PX Master Security, Store, Economy & Music Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -64,7 +64,7 @@ TICKET_CLOSE_LOG_ID = 1544391704323563612
 PC_CATEGORY_ID = 1525182001097998339           # Real PcPanel Category
 ANDROID_CATEGORY_ID = 1525182001097998345      # Real Android Injector Category
 
-# 24/7 Voice Channel ID
+# 24/7 Voice Channel
 PUBLIC_VC_ID = 1536673850358636614
 
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
@@ -80,7 +80,7 @@ channel_webhooks = {}
 inactivity_warned = set()
 active_giveaways = set()
 
-# Music Player Cache
+# Music Cache
 song_queue = []
 current_song = None
 
@@ -875,7 +875,7 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 14. Member Events (Auto-Roles, Welcome DM, Strict Anti-Nuke) ---
+# --- 14. Member Events (Auto-Roles, Luxury Welcome DM, Strict Anti-Nuke) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
@@ -987,7 +987,7 @@ async def on_member_join(member):
         embed.timestamp = datetime.utcnow()
         await send_custom_channel_msg(welcome_channel, "PX WELCOMER BOT", content=f"Welcome {member.mention}!", embed=embed)
 
-    # 5. Professional Welcome Direct Message (DM)
+    # 5. Professional Luxury Welcome Direct Message (DM)
     try:
         dm_embed = discord.Embed(
             title="✦  WELCOME TO PERSISTX OFFICIAL COMMUNITY  ✦",
@@ -999,14 +999,13 @@ async def on_member_join(member):
                 f"╰─────────────────────────────────╯\n"
                 f"• 📜 **Official Server Rules:** <#{RULE_CHANNEL_ID}>\n"
                 f"• 💬 **Community Lounge:** <#{CHAT_CHANNEL_ID}>\n"
-                f"• 🛍️ **PC & Android Store:** <#{TICKET_PANEL_CHANNEL_ID}>\n"
-                f"• 🔊 **24/7 Voice Hangout:** <#{PUBLIC_VC_ID}>\n\n"
+                f"• 🛍️ **PC & Android Store:** <#{TICKET_PANEL_CHANNEL_ID}>\n\n"
                 f"╭─────────────────────────────────╮\n"
                 f"  💎 **AUTOMATED PRIVILEGES**\n"
                 f"╰─────────────────────────────────╯\n"
                 f"• You have been automatically assigned **Family & Community** roles.\n"
                 f"• Your profile has been formatted with the verified `PX | ` prefix.\n\n"
-                f"*For official panel purchases or trial keys, please open a private ticket.*"
+                f"*For official panel purchases or trial keys, please open a private ticket in <#{TICKET_PANEL_CHANNEL_ID}>.*"
             ),
             color=0xED4245
         )
@@ -1015,7 +1014,7 @@ async def on_member_join(member):
         dm_embed.set_footer(text="PERSISTX OFFICIAL STORE © 2026 • Verified Customer Portal", icon_url=guild.icon.url if guild.icon else None)
         dm_embed.timestamp = datetime.utcnow()
         await member.send(embed=dm_embed)
-        print(f"[WELCOME DM SUCCESS] Sent welcome DM to {member.name}", flush=True)
+        print(f"[WELCOME DM SUCCESS] Sent luxury welcome DM to {member.name}", flush=True)
     except Exception as e:
         print(f"[WELCOME DM FAILED]: Could not send DM to {member.name} (DMs might be closed): {e}", flush=True)
 
