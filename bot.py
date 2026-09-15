@@ -51,9 +51,9 @@ TICKET_CATEGORY_ID = 1525181999646507118
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Categories to scan
-PC_CATEGORY_ID = 1525182001097998345           # PcPanel Category
-ANDROID_CATEGORY_ID = 1525182001097998339      # Android Injector Category
+# Correct Swapped Category IDs
+PC_CATEGORY_ID = 1525182001097998339           # Real PcPanel Category
+ANDROID_CATEGORY_ID = 1525182001097998345      # Real Android Injector Category
 
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 
@@ -67,6 +67,7 @@ member_invited_by = {}
 user_balances = {}          
 daily_cooldowns = {}        
 channel_webhooks = {}       
+panel_message_id = None
 
 
 # --- 3. OwO Economy Helpers ---
@@ -187,13 +188,25 @@ class TicketCloseView(discord.ui.View):
 
 
 def generate_ticket_options(guild: discord.Guild):
-    """Strictly: ALL PC Panels first, ALL Android Injectors second, Services last"""
+    """Guaranteed Correct: PC Panels from PcPanel category, Android from Android Injector category"""
     pc_options = []
     android_options = []
 
     if guild:
-        # 1. Pure PC Panels from PC_CATEGORY_ID
+        # Search PcPanel and Android categories safely
         pc_cat = guild.get_channel(PC_CATEGORY_ID)
+        android_cat = guild.get_channel(ANDROID_CATEGORY_ID)
+
+        # Fallback by name check if IDs ever change
+        if not pc_cat or not android_cat:
+            for cat in guild.categories:
+                c_name = cat.name.lower().replace(" ", "")
+                if "pcpanel" in c_name or "pc" in c_name:
+                    pc_cat = cat
+                elif "android" in c_name or "injector" in c_name:
+                    android_cat = cat
+
+        # 1. Pure PC Panels
         if pc_cat and isinstance(pc_cat, discord.CategoryChannel):
             for ch in pc_cat.text_channels:
                 clean = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().title()
@@ -205,8 +218,7 @@ def generate_ticket_options(guild: discord.Guild):
                     )
                 )
 
-        # 2. Pure Android Injectors from ANDROID_CATEGORY_ID
-        android_cat = guild.get_channel(ANDROID_CATEGORY_ID)
+        # 2. Pure Android Injectors
         if android_cat and isinstance(android_cat, discord.CategoryChannel):
             for ch in android_cat.text_channels:
                 clean = ch.name.replace("🛒", "").replace("・", "").replace("-", " ").strip().title()
@@ -226,12 +238,15 @@ def generate_ticket_options(guild: discord.Guild):
         discord.SelectOption(label="TECHNICAL SUPPORT & HELP", description="Direct assistance from PERSISTX", emoji="🆘")
     ]
 
-    # Discord limit is 25 items
+    # Discord max slots = 25
     slots_left = 25 - len(mandatory_services)
     
-    # Pack PC Panels first, Android next
-    combined_products = (pc_options + android_options)[:slots_left]
-    return combined_products + mandatory_services
+    # Priority: PC first, Android second, Services last
+    final_pc = pc_options[:11]
+    rem = slots_left - len(final_pc)
+    final_android = android_options[:rem]
+
+    return final_pc + final_android + mandatory_services
 
 
 class DynamicTicketSelect(discord.ui.Select):
@@ -370,12 +385,11 @@ def get_ticket_panel_embed(guild):
 
 
 async def force_fresh_ticket_panel(guild: discord.Guild):
-    """Purana panel clear karke ekdam FRESH options ke saath panel bhejo"""
+    """Purana panel delete karke completely FRESH sorted panel post karein"""
     t_channel = guild.get_channel(TICKET_PANEL_CHANNEL_ID)
     if not t_channel:
         return
 
-    # Purane bot ke messages ko channel se clear karo taaki cache clash na ho
     try:
         async for msg in t_channel.history(limit=10):
             if msg.author.id == bot.user.id:
@@ -390,7 +404,7 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
 
     try:
         await t_channel.send(embed=embed, view=view)
-        print("[AUTO-SYNC] Fresh panel posted with sorted PC & Android channels!", flush=True)
+        print("[AUTO-SYNC] Fresh panel posted with strictly sorted PC & Android!", flush=True)
     except Exception as e:
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
@@ -550,7 +564,7 @@ async def on_ready():
         except Exception:
             pass
 
-        # Bot start hote hi fresh panel deploy
+        # Deploy 100% freshly sorted panel
         await force_fresh_ticket_panel(guild)
 
     for g in list(bot.guilds):
@@ -562,7 +576,6 @@ async def on_ready():
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
-    # Channel bante hi auto-fresh panel
     if channel.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID]:
         await asyncio.sleep(1)
         await force_fresh_ticket_panel(channel.guild)
@@ -572,8 +585,6 @@ async def on_guild_channel_create(channel):
 async def on_guild_channel_delete(channel):
     if channel.guild.id != MY_SERVER_ID:
         return
-    
-    # Category channel delete hone par panel auto-update
     if channel.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID]:
         await asyncio.sleep(1)
         await force_fresh_ticket_panel(channel.guild)
@@ -621,7 +632,6 @@ async def on_member_join(member):
                 pass
             return
 
-    # Auto "PX | " tag on member join
     if not member.bot and member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
@@ -629,7 +639,6 @@ async def on_member_join(member):
         except Exception:
             pass
 
-    # Invite Tracker
     inviter = None
     try:
         current_invites = await guild.invites()
