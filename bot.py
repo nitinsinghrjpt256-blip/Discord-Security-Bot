@@ -14,7 +14,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PX Complete Ticket, Giveaway & OwO Master Bot is Online 24/7!"
+    return "PX Complete Master System is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -72,7 +72,88 @@ inactivity_warned = set()
 active_giveaways = set()
 
 
-# --- 3. Bot Class & Definition (Declared early to prevent NameError) ---
+# --- 3. Rating & Transcript Helpers ---
+async def generate_transcript(channel: discord.TextChannel) -> discord.File:
+    buffer = io.StringIO()
+    buffer.write("========================================================\n")
+    buffer.write(f"           PERSISTX OFFICIAL TICKET TRANSCRIPT          \n")
+    buffer.write(f"Ticket Channel : #{channel.name}\n")
+    buffer.write(f"Export Date    : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+    buffer.write("========================================================\n\n")
+
+    messages = [msg async for msg in channel.history(limit=500, oldest_first=True)]
+    for msg in messages:
+        timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        author = f"{msg.author.name}#{msg.author.discriminator}" if msg.author.discriminator != '0' else msg.author.name
+        content = msg.clean_content or "[No text content]"
+        buffer.write(f"[{timestamp}] {author}: {content}\n")
+        if msg.attachments:
+            for att in msg.attachments:
+                buffer.write(f"    -> [Attachment]: {att.url}\n")
+        buffer.write("\n")
+
+    buffer.seek(0)
+    return discord.File(fp=io.BytesIO(buffer.getvalue().encode('utf-8')), filename=f"transcript-{channel.name}.txt")
+
+
+class TicketRatingView(discord.ui.View):
+    def __init__(self, ticket_name: str, guild: discord.Guild):
+        super().__init__(timeout=86400)
+        self.ticket_name = ticket_name
+        self.guild = guild
+
+    async def submit_rating(self, interaction: discord.Interaction, stars: int):
+        stars_display = "⭐" * stars
+        await interaction.response.send_message(
+            f"💖 **Thank you for your feedback!** Aapne PERSISTX Support ko **{stars_display}** rating di hai.",
+            ephemeral=True
+        )
+        for child in self.children:
+            child.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        close_log = self.guild.get_channel(TICKET_CLOSE_LOG_ID)
+        if close_log:
+            embed = discord.Embed(
+                title="🌟  CUSTOMER REVIEW RECEIVED",
+                description=(
+                    f"A customer submitted a rating for their closed ticket.\n\n"
+                    f"• **Ticket Name:** `#{self.ticket_name}`\n"
+                    f"• **Customer:** {interaction.user.mention} (`{interaction.user.name}`)\n"
+                    f"• **Rating Given:** {stars_display} (`{stars}/5 Stars`)\n"
+                    f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:R>"
+                ),
+                color=0xFEE75C
+            )
+            embed.set_author(name="PX CUSTOMER SATISFACTION", icon_url=self.guild.icon.url if self.guild.icon else None)
+            embed.set_footer(text="PERSISTX ENTERPRISE © 2026", icon_url=self.guild.icon.url if self.guild.icon else None)
+            embed.timestamp = datetime.utcnow()
+            await send_custom_channel_msg(close_log, "PX TICKET BOT", embed=embed)
+
+    @discord.ui.button(label="⭐", style=discord.ButtonStyle.secondary, custom_id="rate_1")
+    async def r1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 1)
+
+    @discord.ui.button(label="⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_2")
+    async def r2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 2)
+
+    @discord.ui.button(label="⭐⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_3")
+    async def r3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 3)
+
+    @discord.ui.button(label="⭐⭐⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_4")
+    async def r4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 4)
+
+    @discord.ui.button(label="⭐⭐⭐⭐⭐", style=discord.ButtonStyle.success, custom_id="rate_5")
+    async def r5(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.submit_rating(interaction, 5)
+
+
 class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -151,6 +232,7 @@ class TicketCloseView(discord.ui.View):
             print(f"Error deleting ticket channel: {e}")
 
 
+# --- 4. Bot Instance Declaration ---
 class SecurityBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=["!", "/"], intents=intents)
@@ -161,7 +243,7 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 4. OwO Economy Helpers ---
+# --- 5. Economy & Identity Helpers ---
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
         return 999_999_999_999
@@ -178,8 +260,6 @@ def update_user_balance(user_id: int, amount: int):
     current = user_balances.get(user_id, 1000)
     user_balances[user_id] = max(0, current + amount)
 
-
-# --- 5. Webhook Identity Sender ---
 async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None, file=None):
     if not channel or channel.guild.id != MY_SERVER_ID:
         return None
@@ -238,7 +318,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 7. Reaction Restriction for Giveaways ---
+# --- 7. Reaction Restrictor for Giveaways ---
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.user_id == bot.user.id:
@@ -255,89 +335,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 pass
 
 
-# --- 8. Rating & Transcript Helpers ---
-class TicketRatingView(discord.ui.View):
-    def __init__(self, ticket_name: str, guild: discord.Guild):
-        super().__init__(timeout=86400)
-        self.ticket_name = ticket_name
-        self.guild = guild
-
-    async def submit_rating(self, interaction: discord.Interaction, stars: int):
-        stars_display = "⭐" * stars
-        await interaction.response.send_message(
-            f"💖 **Thank you for your feedback!** Aapne PERSISTX Support ko **{stars_display}** rating di hai.",
-            ephemeral=True
-        )
-        for child in self.children:
-            child.disabled = True
-        try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
-
-        close_log = self.guild.get_channel(TICKET_CLOSE_LOG_ID)
-        if close_log:
-            embed = discord.Embed(
-                title="🌟  CUSTOMER REVIEW RECEIVED",
-                description=(
-                    f"A customer submitted a rating for their closed ticket.\n\n"
-                    f"• **Ticket Name:** `#{self.ticket_name}`\n"
-                    f"• **Customer:** {interaction.user.mention} (`{interaction.user.name}`)\n"
-                    f"• **Rating Given:** {stars_display} (`{stars}/5 Stars`)\n"
-                    f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:R>"
-                ),
-                color=0xFEE75C
-            )
-            embed.set_author(name="PX CUSTOMER SATISFACTION", icon_url=self.guild.icon.url if self.guild.icon else None)
-            embed.set_footer(text="PERSISTX ENTERPRISE © 2026", icon_url=self.guild.icon.url if self.guild.icon else None)
-            embed.timestamp = datetime.utcnow()
-            await send_custom_channel_msg(close_log, "PX TICKET BOT", embed=embed)
-
-    @discord.ui.button(label="⭐", style=discord.ButtonStyle.secondary, custom_id="rate_1")
-    async def r1(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.submit_rating(interaction, 1)
-
-    @discord.ui.button(label="⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_2")
-    async def r2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.submit_rating(interaction, 2)
-
-    @discord.ui.button(label="⭐⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_3")
-    async def r3(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.submit_rating(interaction, 3)
-
-    @discord.ui.button(label="⭐⭐⭐⭐", style=discord.ButtonStyle.secondary, custom_id="rate_4")
-    async def r4(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.submit_rating(interaction, 4)
-
-    @discord.ui.button(label="⭐⭐⭐⭐⭐", style=discord.ButtonStyle.success, custom_id="rate_5")
-    async def r5(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.submit_rating(interaction, 5)
-
-
-async def generate_transcript(channel: discord.TextChannel) -> discord.File:
-    buffer = io.StringIO()
-    buffer.write("========================================================\n")
-    buffer.write(f"           PERSISTX OFFICIAL TICKET TRANSCRIPT          \n")
-    buffer.write(f"Ticket Channel : #{channel.name}\n")
-    buffer.write(f"Export Date    : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
-    buffer.write("========================================================\n\n")
-
-    messages = [msg async for msg in channel.history(limit=500, oldest_first=True)]
-    for msg in messages:
-        timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
-        author = f"{msg.author.name}#{msg.author.discriminator}" if msg.author.discriminator != '0' else msg.author.name
-        content = msg.clean_content or "[No text content]"
-        buffer.write(f"[{timestamp}] {author}: {content}\n")
-        if msg.attachments:
-            for att in msg.attachments:
-                buffer.write(f"    -> [Attachment]: {att.url}\n")
-        buffer.write("\n")
-
-    buffer.seek(0)
-    return discord.File(fp=io.BytesIO(buffer.getvalue().encode('utf-8')), filename=f"transcript-{channel.name}.txt")
-
-
-# --- 9. Dynamic Ticket Options & View ---
+# --- 8. Dynamic Ticket Generator & Select View ---
 def generate_ticket_options(guild: discord.Guild):
     pc_options = []
     android_options = []
@@ -553,7 +551,7 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 10. Inactivity Cleaner Task ---
+# --- 9. Inactivity Ghost Tickets Auto-Close Loop ---
 @tasks.loop(minutes=30)
 async def ghost_tickets_cleaner():
     guild = bot.get_guild(MY_SERVER_ID)
@@ -617,7 +615,7 @@ async def ghost_tickets_cleaner():
             print(f"[GHOST CLEANER ERROR in #{channel.name}]: {e}")
 
 
-# --- 11. Mines Game View ---
+# --- 10. Mines Mini-Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -737,7 +735,14 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 12. Event Listeners ---
+# --- 11. Security Checks & Ready Listener ---
+@bot.tree.interaction_check
+async def global_slash_check(interaction: discord.Interaction):
+    if not interaction.guild or interaction.guild.id != MY_SERVER_ID:
+        await interaction.response.send_message(ACCESS_DENIED_MSG, ephemeral=True)
+        return False
+    return True
+
 @bot.event
 async def on_ready():
     print(f"\n==========================================", flush=True)
@@ -747,11 +752,12 @@ async def on_ready():
 
     guild = bot.get_guild(MY_SERVER_ID)
     if guild:
+        # DIRECT GUILD SLASH SYNC (Eliminates Delay and Rate Limits)
         try:
-            guild_obj = discord.Object(id=MY_SERVER_ID)
-            bot.tree.copy_global_to(guild=guild_obj)
-            synced = await bot.tree.sync(guild=guild_obj)
-            print(f"[SLASH-SYNC] Synced {len(synced)} commands directly to Guild!", flush=True)
+            guild_target = discord.Object(id=MY_SERVER_ID)
+            bot.tree.copy_global_to(guild=guild_target)
+            synced = await bot.tree.sync(guild=guild_target)
+            print(f"[SLASH-SYNC SUCCESS] {len(synced)} slash commands registered instantly to Guild!", flush=True)
         except Exception as e:
             print(f"[SLASH-SYNC ERROR]: {e}", flush=True)
 
@@ -771,6 +777,7 @@ async def on_ready():
             await g.leave()
 
 
+# --- 12. Channels & Role Watchdog Listeners ---
 @bot.event
 async def on_guild_channel_create(channel):
     if channel.guild.id != MY_SERVER_ID:
@@ -778,7 +785,6 @@ async def on_guild_channel_create(channel):
     if channel.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID]:
         await asyncio.sleep(1)
         await force_fresh_ticket_panel(channel.guild)
-
 
 @bot.event
 async def on_guild_channel_delete(channel):
@@ -796,14 +802,12 @@ async def on_guild_channel_delete(channel):
             return
         await execute_antinuke_punishment(guild, executor, f"Channel Deletion: #{channel.name}")
 
-
 @bot.event
 async def on_guild_channel_update(before, after):
     if after.guild.id != MY_SERVER_ID:
         return
     if after.category_id in [PC_CATEGORY_ID, ANDROID_CATEGORY_ID] and before.name != after.name:
         await force_fresh_ticket_panel(after.guild)
-
 
 @bot.event
 async def on_guild_role_delete(role):
@@ -815,6 +819,7 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
+# --- 13. Member Events (Welcomer, Inviter & Leave) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
@@ -900,7 +905,6 @@ async def on_member_join(member):
         embed.timestamp = datetime.utcnow()
         await send_custom_channel_msg(welcome_channel, "PX WELCOMER BOT", content=f"Welcome {member.mention}!", embed=embed)
 
-
 @bot.event
 async def on_member_remove(member):
     if member.guild.id != MY_SERVER_ID:
@@ -923,7 +927,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 13. Message Event (Auto-QR in Tickets, OwO & Commands) ---
+# --- 14. Message Event (Auto-QR, OwO Mini-Games & Text Triggers) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -1110,21 +1114,22 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 14. Slash Commands Suite ---
-@bot.tree.command(name="pxticketsetup", description="Deploy dynamic ticket panel reading from categories")
+# --- 15. ALL ACTIVE SLASH COMMANDS SUITE ---
+
+# 1. Ticket Setup Command
+@bot.tree.command(name="pxticketsetup", description="Deploy/Refresh the dynamic store ticket panel")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
         await interaction.followup.send("❌ Sirf Administrator use kar sakte hain!", ephemeral=True)
         return
-
     await force_fresh_ticket_panel(interaction.guild)
-    await interaction.followup.send("✅ Dynamic ticket panel successfully refreshed & sent!", ephemeral=True)
+    await interaction.followup.send("✅ Dynamic ticket panel successfully refreshed & deployed!", ephemeral=True)
 
 
+# 2. Professional Giveaway Command
 @bot.tree.command(name="giveaway", description="Launch an official PERSISTX Giveaway event")
-@app_commands.describe(prize="Enter the item or key to giveaway", duration_minutes="Event run-time in minutes", winners="Total count of winners")
+@app_commands.describe(prize="Inam ka naam", duration_minutes="Kitne minute chalega", winners="Kitne winners honge")
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
         await interaction.response.send_message("❌ Access Denied: Administrator permission required.", ephemeral=True)
@@ -1209,7 +1214,116 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         print(f"[GIVEAWAY END ERROR]: {e}")
 
 
-# --- 15. Execution Start ---
+# 3. Chat Purge / Clear Command
+@bot.tree.command(name="clear", description="Clear a specific number of chat messages")
+@app_commands.describe(amount="Messages ki sankhya (Max: 100)")
+async def clear(interaction: discord.Interaction, amount: int):
+    if not interaction.user.guild_permissions.manage_messages and interaction.user.id != MY_USER_ID:
+        await interaction.response.send_message("❌ Manage Messages permission required!", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    deleted = await interaction.channel.purge(limit=max(1, min(amount, 100)))
+    await interaction.followup.send(f"🧹 Cleaned `{len(deleted)}` messages successfully!", ephemeral=True)
+
+
+# 4. Latency / Ping Command
+@bot.tree.command(name="ping", description="Check bot latency and API heartbeat")
+async def ping(interaction: discord.Interaction):
+    latency = round(bot.latency * 1000)
+    await interaction.response.send_message(f"🏓 **Pong!** WebSocket Latency: `{latency}ms` | System: `Online 24/7`")
+
+
+# 5. Bulk PX Nickname Updater
+@bot.tree.command(name="setpx", description="Apply PX | prefix to all non-tagged server members")
+async def setpx(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
+        await interaction.response.send_message("❌ Administrator permission required!", ephemeral=True)
+        return
+    await interaction.response.defer()
+    guild = interaction.guild
+    changed = 0
+    for member in guild.members:
+        if member.bot or member.id == guild.owner_id:
+            continue
+        if guild.me.top_role <= member.top_role:
+            continue
+        if not member.display_name.upper().startswith("PX"):
+            try:
+                await member.edit(nick=f"PX | {member.display_name}"[:32])
+                changed += 1
+                await asyncio.sleep(0.5)
+            except Exception:
+                pass
+    await interaction.followup.send(f"✅ Updated `{changed}` members with `PX | ` prefix.")
+
+
+# 6. OwO Slash Group
+class OwOGroup(app_commands.Group):
+    def __init__(self):
+        super().__init__(name="owo", description="OwO Mini-Game & Economy Slash System")
+
+owo_group = OwOGroup()
+
+@owo_group.command(name="cash", description="Check current coin balance")
+async def owo_cash_slash(interaction: discord.Interaction):
+    if interaction.channel_id != OWO_CHANNEL_ID:
+        await interaction.response.send_message(f"❌ Sirf <#{OWO_CHANNEL_ID}> me use karein!", ephemeral=True)
+        return
+    display_bal = format_balance(interaction.user.id)
+    await interaction.response.send_message(f"👛 **{interaction.user.display_name}**'s Balance: **{display_bal}** OwO Coins")
+
+@owo_group.command(name="mine", description="Play 3x3 interactive Mines game")
+@app_commands.describe(amount="Kitne coins ki shart lagani hai")
+async def owo_mine_slash(interaction: discord.Interaction, amount: int):
+    if interaction.channel_id != OWO_CHANNEL_ID:
+        await interaction.response.send_message(f"❌ Sirf <#{OWO_CHANNEL_ID}> me chalega!", ephemeral=True)
+        return
+    if amount <= 0:
+        await interaction.response.send_message("❌ Amount valid hona chahiye!", ephemeral=True)
+        return
+    bal = get_user_balance(interaction.user.id)
+    if interaction.user.id != MY_USER_ID and amount > bal:
+        await interaction.response.send_message("❌ Insufficient balance!", ephemeral=True)
+        return
+
+    view = MinesGameView(interaction.user, amount)
+    await interaction.response.send_message(
+        content=f"💣 **MINES GAME STARTED** | Bet: **{amount:,}** Coins\nGrid me **3 Hidden Bombs (💣)** hain. 💎 dhoondhein aur Cashout karein!",
+        view=view
+    )
+
+bot.tree.add_command(owo_group)
+
+
+# 7. Help & Command Guide
+@bot.tree.command(name="help", description="Display full PERSISTX command list")
+async def help_command(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="✦  PERSISTX COMMAND CENTER  ✦",
+        description=(
+            "**Store & Operations**\n"
+            "• `/pxticketsetup` — Refresh & post dynamic product tickets\n"
+            "• `/giveaway` — Host a verified clean giveaway\n"
+            "• `qr` — Auto-dispenses payment scanner inside any ticket\n\n"
+            "**Administration & Moderation**\n"
+            "• `/clear <amount>` — Purge chat history quickly\n"
+            "• `/setpx` — Auto-apply `PX | ` tag across all members\n"
+            "• `/ping` — Check bot latency\n\n"
+            "**Economy & Games (In <#{OWO_CHANNEL_ID}>)**\n"
+            "• `owo cash` / `/owo cash` — View coin reserves\n"
+            "• `owo daily` — Claim 24h bonus coins\n"
+            "• `owo mine <bet>` / `/owo mine <bet>` — Interactive 3x3 Mines\n"
+            "• `owo cf <bet> [h/t]` — 50/50 Coin Flip\n"
+            "• `owo s <bet>` — Casino Slots\n"
+            "• `owo give @user <amount>` — Transfer coins\n"
+        ),
+        color=0xED4245
+    )
+    embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • 24/7 Active", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# --- 16. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
