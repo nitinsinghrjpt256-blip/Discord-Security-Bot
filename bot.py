@@ -69,7 +69,7 @@ user_balances = {}
 daily_cooldowns = {}        
 channel_webhooks = {}       
 inactivity_warned = set()
-active_giveaways = set()    # Stores Giveaway message IDs
+active_giveaways = set()
 
 
 # --- 3. OwO Economy Helpers ---
@@ -152,13 +152,11 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
 # --- 6. Reaction Restriction for Giveaways ---
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    # Ignore reactions added by the bot
     if payload.user_id == bot.user.id:
         return
 
-    # Check if message is registered as an active giveaway message
+    # Restrict unallowed reactions on Giveaway messages
     if payload.message_id in active_giveaways:
-        # If emoji is NOT 🎉, remove it immediately
         if str(payload.emoji) != "🎉":
             try:
                 channel = bot.get_channel(payload.channel_id)
@@ -1113,7 +1111,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 14. Slash Commands ---
+# --- 14. Slash Commands Suite ---
 @bot.tree.command(name="pxticketsetup", description="Deploy dynamic ticket panel reading from categories")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1126,37 +1124,46 @@ async def pxticketsetup(interaction: discord.Interaction):
     await interaction.followup.send("✅ Dynamic ticket panel successfully refreshed & sent!", ephemeral=True)
 
 
-@bot.tree.command(name="giveaway", description="Start an official giveaway")
-@app_commands.describe(prize="Inam kya hai", duration_minutes="Kitne minutes tak chalega", winners="Winners ki count")
+@bot.tree.command(name="giveaway", description="Launch an official PERSISTX Giveaway event")
+@app_commands.describe(prize="Enter the item or key to giveaway", duration_minutes="Event run-time in minutes", winners="Total count of winners")
 async def giveaway(interaction: discord.Interaction, prize: str, duration_minutes: int, winners: int = 1):
     if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
-        await interaction.response.send_message("❌ Sirf Admin giveaway start kar sakte hain!", ephemeral=True)
+        await interaction.response.send_message("❌ Access Denied: Administrator permission required.", ephemeral=True)
         return
 
     await interaction.response.defer()
     end_time = datetime.utcnow() + timedelta(minutes=duration_minutes)
+    end_timestamp = int(end_time.timestamp())
 
+    # Professional Giveaway Card
     embed = discord.Embed(
-        title=f"🎁  {prize.upper()}  🎁",
+        title="✦  PERSISTX • OFFICIAL GIVEAWAY EVENT  ✦",
         description=(
-            f"• **Winners:** `{winners}`\n"
-            f"• **Ends in:** `{duration_minutes} minutes` (<t:{int(end_time.timestamp())}:R>)\n"
-            f"• **Hosted by:** {interaction.user.mention}\n\n"
-            f"• **React with 🎉 to participate!**"
+            f"> 🎁 **Prize Item:** `{prize.upper()}`\n"
+            f"> 🏆 **Winners Count:** `{winners}`\n"
+            f"> ⏱️ **Event Concludes:** <t:{end_timestamp}:R> (<t:{end_timestamp}:f>)\n"
+            f"> 👤 **Hosted By:** {interaction.user.mention}\n\n"
+            f"╭─────────────────────────────────╮\n"
+            f"  📌 **PARTICIPATION REQUIREMENTS**\n"
+            f"╰─────────────────────────────────╯\n"
+            f"• Click the **🎉** reaction below to enter the pool.\n"
+            f"• Any other reaction will be automatically purged.\n\n"
+            f"*Good luck to all PERSISTX community participants!* ✧"
         ),
         color=0xFEE75C
     )
-    embed.set_footer(text=f"PX PANEL • PX FAMILY ❤️ • Ends at")
+    embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
+    embed.set_author(name="PERSISTX ENTERPRISE", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+    embed.set_footer(text="PX AUTOMATED GIVEAWAY SYSTEM © 2026", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
     embed.timestamp = end_time
 
-    gw_msg = await interaction.channel.send(content="@everyone @here 🎉 **New Giveaway** 🎉", embed=embed)
+    gw_msg = await interaction.channel.send(content="📢 @everyone @here — **OFFICIAL GIVEAWAY LAUNCHED** 🎁", embed=embed)
     await gw_msg.add_reaction("🎉")
 
-    # Register active giveaway for reaction restriction
+    # Track active giveaway for non-🎉 deletion
     active_giveaways.add(gw_msg.id)
-    await interaction.followup.send(f"✅ Giveaway posted: {gw_msg.jump_url}", ephemeral=True)
+    await interaction.followup.send(f"✅ Giveaway event deployed successfully: {gw_msg.jump_url}", ephemeral=True)
 
-    # Wait for completion
     await asyncio.sleep(duration_minutes * 60)
 
     try:
@@ -1167,18 +1174,41 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         active_giveaways.discard(gw_msg.id)
 
         if not users:
-            await interaction.channel.send(f"😢 Giveaway `{prize}` ended, lekin koi valid participant nahi tha.")
+            no_winner_embed = discord.Embed(
+                title="✦  GIVEAWAY CONCLUDED: NO PARTICIPANTS  ✦",
+                description=f"The giveaway event for **{prize.upper()}** has ended without any valid entries.",
+                color=0xED4245
+            )
+            await interaction.channel.send(embed=no_winner_embed)
             return
 
         selected_winners = random.sample(users, k=min(winners, len(users)))
         winner_mentions = ", ".join(w.mention for w in selected_winners)
 
+        # Luxury Enterprise Winner Card
         win_embed = discord.Embed(
-            title="🎉  GIVEAWAY WINNER ANNOUNCED!  🎉",
-            description=f"Congratulations {winner_mentions}! Aap jeet chuke hain: **{prize}** 🏆\nOpen a ticket to claim your prize!",
+            title="✦  GIVEAWAY CONCLUDED: WINNER ANNOUNCEMENT  ✦",
+            description=(
+                f"Congratulations to the verified winner(s) of the official event!\n\n"
+                f"> 🏆 **Winner(s):** {winner_mentions}\n"
+                f"> 🎁 **Prize Secured:** `{prize.upper()}`\n"
+                f"> ⏱️ **Completed At:** <t:{int(datetime.utcnow().timestamp())}:F>\n\n"
+                f"╭─────────────────────────────────╮\n"
+                f"  📌 **PRIZE CLAIM PROTOCOL**\n"
+                f"╰─────────────────────────────────╯\n"
+                f"1. Open a private ticket via <#{TICKET_PANEL_CHANNEL_ID}>.\n"
+                f"2. Select **`FREE PANEL • TRIAL / DAILY KEY`** or **`SUPPORT`**.\n"
+                f"3. Provide this announcement link to claim your reward.\n\n"
+                f"⚠️ *Prizes must be claimed within 24 hours of this notice.*"
+            ),
             color=0x57F287
         )
-        await interaction.channel.send(content=f"👑 {winner_mentions}", embed=win_embed)
+        win_embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
+        win_embed.set_author(name="PX REWARD DISPATCH", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+        win_embed.set_footer(text="PERSISTX ENTERPRISE © 2026 • Verified Reward", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+        win_embed.timestamp = datetime.utcnow()
+
+        await interaction.channel.send(content=f"👑 **Congratulations** {winner_mentions}!", embed=win_embed)
     except Exception as e:
         print(f"[GIVEAWAY END ERROR]: {e}")
 
