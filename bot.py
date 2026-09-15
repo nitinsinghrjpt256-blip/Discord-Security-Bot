@@ -63,6 +63,9 @@ TICKET_CLOSE_LOG_ID = 1544391704323563612
 PC_CATEGORY_ID = 1525182001097998339
 ANDROID_CATEGORY_ID = 1525182001097998345
 
+# PX Client Channel for Instant QR Trigger
+PX_CLIENT_CHANNEL_ID = 1549535112620679251
+
 # 24/7 Voice Channel
 PUBLIC_VC_ID = 1536673850358636614
 
@@ -439,7 +442,6 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
-        # Channel name is strictly user name
         clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:20]
         channel_name = clean_name
 
@@ -1039,7 +1041,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 15. Message Event ---
+# --- 15. Message Event (Auto-QR in Tickets & PX Client) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -1051,12 +1053,13 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # 1. AUTO-QR TRIGGER IN TICKETS
-    is_in_ticket = (
-        hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID
+    # AUTO-QR TRIGGER (Active in Tickets AND PX Client Channel)
+    is_in_qr_allowed = (
+        (hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID)
+        or message.channel.id == PX_CLIENT_CHANNEL_ID
     )
 
-    if is_in_ticket and lowered in ["qr", "send qr", "!qr", "qr code", "payment qr", "scanner"]:
+    if is_in_qr_allowed and lowered in ["qr", "send qr", "!qr", "qr code", "payment qr", "scanner"]:
         qr_embed = discord.Embed(
             title="✦  PERSISTX OFFICIAL PAYMENT QR  ✦",
             description=(
@@ -1077,7 +1080,7 @@ async def on_message(message):
         await send_custom_channel_msg(message.channel, "PX TICKET BOT", embed=qr_embed)
         return
 
-    # 2. Text Setup Fallback
+    # Text Setup Fallback
     if lowered in ["!pxticketsetup", "!ticketsetup", "/pxticketsetup"]:
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -1091,7 +1094,7 @@ async def on_message(message):
         await message.channel.send("✅ Dynamic ticket panel successfully refreshed & sent!")
         return
 
-    # 3. OwO Mini-Games
+    # OwO Mini-Games
     if lowered.startswith("owo") or lowered.startswith("px owo"):
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
@@ -1600,7 +1603,7 @@ async def help_command(interaction: discord.Interaction):
             "**Store & Operations**\n"
             "• `/pxticketsetup` — Refresh & post dynamic product tickets\n"
             "• `/giveaway` — Host a verified clean giveaway\n"
-            "• `qr` — Auto-dispenses payment scanner inside any ticket\n\n"
+            "• `qr` — Auto-dispenses payment scanner (Works in Tickets & <#1549535112620679251>)\n\n"
             "**Music & Voice (24/7 in <#{PUBLIC_VC_ID}>)**\n"
             "• `/joinvc` — Force-join bot to 24/7 Public VC\n"
             "• `/play <query>` — Play YouTube/Spotify track title or URL\n"
