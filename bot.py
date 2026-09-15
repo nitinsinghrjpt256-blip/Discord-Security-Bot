@@ -265,7 +265,7 @@ class DynamicTicketSelect(discord.ui.Select):
                 f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
                 f"  💳 **PAYMENT & DETAILS**\n"
                 f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
-                f"• **BINANCE PAY ID:** `1210948888` (NAME: `PERSISTX`)\n"
+                f"• **BINANCE PAY ID:** `Releasing Soon` (NAME: `PERSISTX`)\n"
                 f"• **UPI / QR SCAN:** *Scan the official QR code below.*\n\n"
                 f"📌 **Next Steps:**\n"
                 f"1. Agar **Buy** karna hai toh payment karke screenshot yahan bhejein.\n"
@@ -282,7 +282,9 @@ class DynamicTicketSelect(discord.ui.Select):
 
         close_view = TicketCloseView()
         await ticket_channel.send(content=f"{user.mention} | <@{MY_USER_ID}>", embed=embed, view=close_view)
-        await interaction.followup.send(f"✅ Ticket create ho gaya: {ticket_channel.mention}", ephemeral=True)
+        
+        # User requirement: "your ticket has been created !"
+        await interaction.followup.send(f"Your ticket has been created ! {ticket_channel.mention}", ephemeral=True)
 
 
 class DynamicTicketView(discord.ui.View):
@@ -298,7 +300,7 @@ def get_ticket_panel_embed(guild):
             "Welcome to **PERSISTX OFFICIAL STORE**! 🚀\n"
             "Choose your required **PC Panel**, **Android Injector**, or **Free Key** from the menu below.\n\n"
             "```yaml\n"
-            "BINANCE PAY ID : 1210948888\n"
+            "BINANCE PAY ID : Releasing Soon\n"
             "MERCHANT NAME  : PERSISTX_OFFICIAL\n"
             "DISPATCH       : INSTANT KEY & SETUP FILE\n"
             "SUPPORT        : 24/7 DEDICATED ASSISTANCE\n"
@@ -685,7 +687,7 @@ async def on_message(message):
                 f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
                 f"  💳 **PAYMENT INFORMATION**\n"
                 f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
-                f"• **BINANCE PAY ID:** `Soon` (NAME: `PERSISTX`)\n"
+                f"• **BINANCE PAY ID:** `Releasing Soon` (NAME: `PERSISTX`)\n"
                 f"• **UPI / QR SCAN:** *Scan the official QR below to pay.*\n\n"
                 f"📌 *Payment complete karne ke baad screenshot yahan send karein!*"
             ),
