@@ -50,7 +50,9 @@ TICKET_CATEGORY_ID = 1525181999646507118
 # Product Categories jo Dropdown me auto-reflect hongi
 SYNC_CATEGORY_IDS = [1525182001097998345, 1525182001097998339]
 
-QR_IMAGE_URL = "https://i.ibb.co/3sLz11T/px-qr.png"
+# Official CDN QR Code Link
+QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
+
 ticket_counter = 207
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
@@ -683,7 +685,7 @@ async def on_message(message):
                 f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
                 f"  💳 **PAYMENT INFORMATION**\n"
                 f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n"
-                f"• **BINANCE PAY ID:** `1210948888` (NAME: `PERSISTX`)\n"
+                f"• **BINANCE PAY ID:** `Soon` (NAME: `PERSISTX`)\n"
                 f"• **UPI / QR SCAN:** *Scan the official QR below to pay.*\n\n"
                 f"📌 *Payment complete karne ke baad screenshot yahan send karein!*"
             ),
