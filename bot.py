@@ -34,7 +34,7 @@ intents.invites = True
 intents.reactions = True
 
 MY_SERVER_ID = 1525181999147388958
-MY_USER_ID = 1525179499602509977
+MY_USER_ID = 1525179499602509977  # Sole Authorized Ticket Closer
 
 AUTO_ROLE_IDS = [
     1525217661691236483,  # Family Role
@@ -51,7 +51,7 @@ CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
 
 TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
-TICKET_CATEGORY_ID = 1525181999646507118       
+TICKET_CATEGORY_ID = 1525181999646507118       # Only Category with Auto-Inactivity Close
 
 # Ticket Notification Logs
 TICKET_OPEN_LOG_ID = 1544967681898450985
@@ -61,7 +61,7 @@ TICKET_CLOSE_LOG_ID = 1544391704323563612
 PC_CATEGORY_ID = 1525182001097998339
 ANDROID_CATEGORY_ID = 1525182001097998345
 
-# Specific QR Trigger Destinations
+# Specific Categories & Channels
 PX_CLIENT_CHANNEL_ID = 1549535112620679251
 RESELLER_CATEGORY_ID = 1549737126109773824
 CUSTOM_PANEL_CATEGORY_ID = 1549737170691166289
@@ -195,6 +195,14 @@ class TicketCloseView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket 🔒", style=discord.ButtonStyle.danger, custom_id="px_ticket_close_btn")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Strict Restriction: Sirf Super Admin PERSISTX close kar sakta hai
+        if interaction.user.id != MY_USER_ID:
+            await interaction.response.send_message(
+                "❌ **Access Denied:** Sirf Super Admin <@1525179499602509977> hi ticket close kar sakte hain!",
+                ephemeral=True
+            )
+            return
+
         guild = interaction.guild
         channel = interaction.channel
         user = interaction.user
@@ -218,7 +226,7 @@ class TicketCloseView(discord.ui.View):
             close_embed = discord.Embed(
                 title="🔒  TICKET CLOSED & TRANSCRIPT SAVED",
                 description=(
-                    f"A ticket has been permanently closed.\n\n"
+                    f"A ticket has been permanently closed by Admin.\n\n"
                     f"• **Ticket Channel:** `#{channel.name}`\n"
                     f"• **Opened By:** {ticket_creator.mention if ticket_creator else 'Unknown'}\n"
                     f"• **Closed By:** {user.mention} (`{user.name}`)\n"
@@ -262,7 +270,7 @@ class TicketCloseView(discord.ui.View):
 
         await asyncio.sleep(4)
         try:
-            await channel.delete(reason=f"Ticket closed by {user.name}")
+            await channel.delete(reason=f"Ticket closed by Super Admin {user.name}")
         except Exception as e:
             print(f"Error deleting ticket channel: {e}")
 
@@ -586,13 +594,14 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 9. Inactivity Cleaner Task ---
+# --- 9. Inactivity Cleaner Task (ONLY for TICKET_CATEGORY_ID) ---
 @tasks.loop(minutes=30)
 async def ghost_tickets_cleaner():
     guild = bot.get_guild(MY_SERVER_ID)
     if not guild:
         return
 
+    # ONLY fetch the ticket system category
     category = guild.get_channel(TICKET_CATEGORY_ID)
     if not category or not isinstance(category, discord.CategoryChannel):
         return
@@ -600,6 +609,14 @@ async def ghost_tickets_cleaner():
     now = datetime.utcnow()
 
     for channel in category.text_channels:
+        # STRICT SAFETY: Never touch Reseller, Custom Panel, or PX Client
+        if channel.category_id in [RESELLER_CATEGORY_ID, CUSTOM_PANEL_CATEGORY_ID] or channel.id == PX_CLIENT_CHANNEL_ID:
+            continue
+            
+        c_name = channel.category.name.lower() if channel.category else ""
+        if "reseller" in c_name or "custom" in c_name or "client" in c_name:
+            continue
+
         try:
             last_msg = None
             async for msg in channel.history(limit=1):
@@ -611,6 +628,7 @@ async def ghost_tickets_cleaner():
 
             idle_duration = now - last_msg.created_at.replace(tzinfo=None)
 
+            # Warning after 24 hours of inactivity
             if idle_duration > timedelta(hours=24) and channel.id not in inactivity_warned:
                 inactivity_warned.add(channel.id)
                 warn_embed = discord.Embed(
@@ -625,6 +643,7 @@ async def ghost_tickets_cleaner():
                 warn_embed.set_footer(text="PX Automation System • Ghost Ticket Clean")
                 await send_custom_channel_msg(channel, "PX TICKET BOT", embed=warn_embed)
 
+            # Permanent Auto-Close after 30 hours (24h + 6h)
             elif idle_duration > timedelta(hours=30) and channel.id in inactivity_warned:
                 transcript_file = await generate_transcript(channel)
                 close_log = guild.get_channel(TICKET_CLOSE_LOG_ID)
@@ -781,7 +800,8 @@ async def on_ready():
     print(f"[ONLINE] Logged in as: {bot.user.name} ({bot.user.id})", flush=True)
     print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
     print(f"[ECONOMY] Default Balance: {DEFAULT_COINS:,} | Daily: 777 | Admin: Unlimited (∞)", flush=True)
-    print(f"[QR ENGINE] Trigger Active in: Tickets, PX Client, Reseller ({RESELLER_CATEGORY_ID}), Custom Panel ({CUSTOM_PANEL_CATEGORY_ID})", flush=True)
+    print(f"[TICKET ACCESS] Only Admin ID ({MY_USER_ID}) can close tickets!", flush=True)
+    print(f"[CLEANER LIMIT] Auto-Inactivity Warning/Close locked ONLY to Category: {TICKET_CATEGORY_ID}", flush=True)
     print(f"==========================================\n", flush=True)
 
     guild = bot.get_guild(MY_SERVER_ID)
@@ -1421,7 +1441,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 16. Start ---
+# --- 16. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
