@@ -8,14 +8,14 @@ from flask import Flask
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import yt_dlp
+from gtts import gTTS
 
 # --- 1. Web Server (Render 24/7 Keep Alive) ---
 web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PERSISTX Master Bot is Online 24/7!"
+    return "PERSISTX Master Bot with Multi-Language TTS is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -59,15 +59,20 @@ TICKET_CATEGORY_ID = 1525181999646507118
 TICKET_OPEN_LOG_ID = 1544967681898450985
 TICKET_CLOSE_LOG_ID = 1544391704323563612
 
-# Categories to scan for dropdown
+# Categories to scan
 PC_CATEGORY_ID = 1525182001097998339
 ANDROID_CATEGORY_ID = 1525182001097998345
 
-# PX Client Channel / Support Channel
+# PX Client Channel
 PX_CLIENT_CHANNEL_ID = 1549535112620679251
 
-# 24/7 Voice Channel
-PUBLIC_VC_ID = 1536673850358636614
+# Designated Target Voice Channels
+TARGET_VC_IDS = [
+    1536673850358636614,
+    1536674419315974254,
+    1536674892081266749,
+    1536678628581056582
+]
 
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
@@ -82,9 +87,9 @@ channel_webhooks = {}
 inactivity_warned = set()
 active_giveaways = set()
 
-# Music Cache
-song_queue = []
-current_song = None
+# TTS Audio Queue
+tts_queue = []
+is_tts_playing = False
 
 # Persistent Counter Logic
 COUNTER_FILE = "ticket_counter.txt"
@@ -279,7 +284,63 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 5. Economy & Helpers ---
+# --- 5. TTS Voice Engine Core (Hindi, English & Hinglish) ---
+def play_next_tts(guild: discord.Guild):
+    global is_tts_playing
+    if len(tts_queue) > 0:
+        is_tts_playing = True
+        file_path = tts_queue.pop(0)
+        voice_client = guild.voice_client
+        if voice_client and voice_client.is_connected():
+            audio_source = discord.FFmpegPCMAudio(file_path)
+            voice_client.play(audio_source, after=lambda e: on_tts_finish(guild, file_path))
+        else:
+            is_tts_playing = False
+    else:
+        is_tts_playing = False
+
+def on_tts_finish(guild: discord.Guild, file_path: str):
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        pass
+    play_next_tts(guild)
+
+async def speak_text_in_vc(target_channel: discord.VoiceChannel, text: str, user_name: str):
+    guild = target_channel.guild
+    voice_client = guild.voice_client
+
+    # Connect or switch channel seamlessly (Private channels included)
+    try:
+        if not voice_client or not voice_client.is_connected():
+            voice_client = await target_channel.connect(timeout=20.0, reconnect=True, self_deaf=True)
+        elif voice_client.channel.id != target_channel.id:
+            await voice_client.move_to(target_channel)
+    except Exception as e:
+        print(f"[TTS CONNECT ERROR]: {e}", flush=True)
+        return
+
+    # Generate Audio using Hindi phonetics (Flawlessly reads Hindi, English, and Roman Hinglish)
+    clean_speech = f"{user_name} bol raha hai: {text}"
+    file_name = f"tts_{random.randint(10000, 99999)}_{int(datetime.utcnow().timestamp())}.mp3"
+
+    try:
+        def generate_audio():
+            tts = gTTS(text=clean_speech, lang='hi', slow=False)
+            tts.save(file_name)
+
+        await asyncio.to_thread(generate_audio)
+        tts_queue.append(file_name)
+
+        global is_tts_playing
+        if not is_tts_playing and (voice_client and not voice_client.is_playing()):
+            play_next_tts(guild)
+    except Exception as e:
+        print(f"[TTS GENERATION ERROR]: {e}", flush=True)
+
+
+# --- 6. Economy & Helpers ---
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
         return 999_999_999_999
@@ -322,7 +383,7 @@ async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, c
         return await channel.send(content=content, embed=embed, view=view, file=file)
 
 
-# --- 6. Anti-Nuke Engine ---
+# --- 7. Anti-Nuke Engine ---
 async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Member, action: str):
     if executor.id == bot.user.id or guild.id != MY_SERVER_ID:
         return
@@ -354,7 +415,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         pass
 
 
-# --- 7. Reaction Restrictor for Giveaways ---
+# --- 8. Reaction Restrictor for Giveaways ---
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.user_id == bot.user.id:
@@ -371,7 +432,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 pass
 
 
-# --- 8. Dynamic Ticket Selection ---
+# --- 9. Dynamic Ticket Generator & Select View ---
 def generate_ticket_options(guild: discord.Guild):
     pc_options = []
     android_options = []
@@ -442,7 +503,6 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
-        # Channel name is only the clean username (bina kisi ticket number ke)
         clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:20]
         channel_name = clean_name
 
@@ -586,7 +646,7 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 9. Inactivity Cleaner Task ---
+# --- 10. Inactivity Cleaner Task ---
 @tasks.loop(minutes=30)
 async def ghost_tickets_cleaner():
     guild = bot.get_guild(MY_SERVER_ID)
@@ -647,7 +707,7 @@ async def ghost_tickets_cleaner():
             print(f"[GHOST CLEANER ERROR in #{channel.name}]: {e}")
 
 
-# --- 10. Mines Mini-Game View ---
+# --- 11. Mines Mini-Game View ---
 class MinesGameView(discord.ui.View):
     def __init__(self, user: discord.User, bet: int):
         super().__init__(timeout=90)
@@ -767,29 +827,6 @@ class MinesGameView(discord.ui.View):
         self.stop()
 
 
-# --- 11. Robust 24/7 Voice Channel Connection ---
-@tasks.loop(seconds=30)
-async def ensure_voice_connected():
-    await bot.wait_until_ready()
-    guild = bot.get_guild(MY_SERVER_ID)
-    if not guild:
-        return
-    vc_channel = guild.get_channel(PUBLIC_VC_ID)
-    if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
-        return
-
-    voice_client = guild.voice_client
-    try:
-        if voice_client is None or not voice_client.is_connected():
-            await vc_channel.connect(timeout=20.0, reconnect=True, self_deaf=True)
-            print("[VOICE 24/7] Auto-Connected to Public VC!", flush=True)
-        elif voice_client.channel.id != PUBLIC_VC_ID:
-            await voice_client.move_to(vc_channel)
-            print("[VOICE 24/7] Re-routed back to Public VC!", flush=True)
-    except Exception as e:
-        print(f"[VOICE CONNECT RETRY]: {e}", flush=True)
-
-
 # --- 12. Security Checks & Ready Listener ---
 @bot.tree.interaction_check
 async def global_slash_check(interaction: discord.Interaction):
@@ -824,9 +861,6 @@ async def on_ready():
         if not ghost_tickets_cleaner.is_running():
             ghost_tickets_cleaner.start()
 
-        if not ensure_voice_connected.is_running():
-            ensure_voice_connected.start()
-
         await force_fresh_ticket_panel(guild)
 
     for g in list(bot.guilds):
@@ -855,7 +889,6 @@ async def on_guild_channel_delete(channel):
     guild = channel.guild
     async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
         executor = entry.user
-        # Ignored if inside any client or ticket related channel
         if (hasattr(channel, 'category') and channel.category and 
             ("ticket" in channel.category.name.lower() or "client" in channel.category.name.lower())):
             return
@@ -1044,7 +1077,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 15. Message Event (Fixed QR for ALL Ticket & Client Channels) ---
+# --- 15. Message Event (TTS Auto-Speaker, QR & Games) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -1053,7 +1086,24 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # --- QR ALLOWED CHECK (TICKET SYSTEM + PX CLIENT + TOPIC MATCH) ---
+    # --- 1. DYNAMIC TTS VOICE TRIGGER (VC Auto-Connect & Speak) ---
+    # Trigger logic: If author is in ANY voice channel (private/public), or chat is inside VC
+    voice_state = message.author.voice
+    target_vc = None
+
+    if voice_state and voice_state.channel:
+        target_vc = voice_state.channel
+    elif isinstance(message.channel, discord.VoiceChannel):
+        target_vc = message.channel
+
+    # Agar user kisi bhi VC me hai aur message commands/qr nahi hai toh bol kar bataye
+    if target_vc and not content.startswith(('!', '/', 'owo', 'px owo', 'qr')):
+        # Avoid reading long essay spam
+        text_to_speak = content[:200]
+        display_name = message.author.display_name.replace("PX | ", "")
+        asyncio.create_task(speak_text_in_vc(target_vc, text_to_speak, display_name))
+
+    # --- 2. QR ALLOWED CHECK (Tickets & PX Client Channels) ---
     is_ticket_by_topic = bool(message.channel.topic and "Ticket #" in message.channel.topic)
     
     cat_name = message.channel.category.name.lower() if message.channel.category else ""
@@ -1064,7 +1114,6 @@ async def on_message(message):
     )
     is_client_channel = (message.channel.id == PX_CLIENT_CHANNEL_ID)
 
-    # Agar inme se koi bhi match kare, channel me QR allowed hoga
     if is_ticket_by_topic or is_in_allowed_category or is_client_channel:
         inactivity_warned.discard(message.channel.id)
 
@@ -1242,49 +1291,19 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# --- 16. Audio Streaming Core ---
-YTDL_OPTIONS = {
-    'format': 'bestaudio/best',
-    'extractaudio': True,
-    'audioformat': 'mp3',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'ytsearch',
-    'source_address': '0.0.0.0',
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['android', 'ios']
-        }
-    }
-}
+# --- 16. Slash Commands Suite ---
+@bot.tree.command(name="tts", description="Speak custom text in your current Voice Channel (Hindi/English/Hinglish)")
+@app_commands.describe(text="Jo aap bot se bulwana chahte hain")
+async def tts_slash(interaction: discord.Interaction, text: str):
+    if not interaction.user.voice or not interaction.user.voice.channel:
+        await interaction.response.send_message("❌ Pehle kisi Voice Channel me join karein!", ephemeral=True)
+        return
 
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn -filter:a "volume=0.9"'
-}
-
-ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
-
-def play_next_song(guild: discord.Guild):
-    global current_song
-    if len(song_queue) > 0:
-        next_track = song_queue.pop(0)
-        current_song = next_track
-        voice_client = guild.voice_client
-        if voice_client and voice_client.is_connected():
-            audio_source = discord.FFmpegPCMAudio(next_track['url'], **FFMPEG_OPTIONS)
-            voice_client.play(audio_source, after=lambda e: play_next_song(guild))
-    else:
-        current_song = None
+    await interaction.response.send_message(f"🗣️ Speaking in `{interaction.user.voice.channel.name}`...", ephemeral=True)
+    clean_name = interaction.user.display_name.replace("PX | ", "")
+    await speak_text_in_vc(interaction.user.voice.channel, text, clean_name)
 
 
-# --- 17. Slash Commands Suite ---
 @bot.tree.command(name="pxticketsetup", description="Deploy/Refresh the dynamic store ticket panel")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1381,156 +1400,6 @@ async def giveaway(interaction: discord.Interaction, prize: str, duration_minute
         print(f"[GIVEAWAY END ERROR]: {e}")
 
 
-# --- Music Commands ---
-@bot.tree.command(name="joinvc", description="Forcefully connect bot to 24/7 Public VC")
-async def joinvc(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    guild = interaction.guild
-    vc_channel = guild.get_channel(PUBLIC_VC_ID)
-    if not vc_channel:
-        await interaction.followup.send("❌ Channel ID galat hai ya channel exist nahi karta!", ephemeral=True)
-        return
-        
-    voice_client = guild.voice_client
-    try:
-        if voice_client and voice_client.is_connected():
-            await voice_client.move_to(vc_channel)
-        else:
-            await vc_channel.connect(timeout=20.0, reconnect=True, self_deaf=True)
-        await interaction.followup.send(f"✅ Bot successfully joined <#{PUBLIC_VC_ID}>!", ephemeral=True)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Join failed: `{e}`", ephemeral=True)
-
-
-@bot.tree.command(name="play", description="Play audio from YouTube, Spotify title, or direct link in 24/7 VC")
-@app_commands.describe(query="Song name or link")
-async def play(interaction: discord.Interaction, query: str):
-    await interaction.response.defer()
-    guild = interaction.guild
-
-    vc_channel = guild.get_channel(PUBLIC_VC_ID)
-    voice_client = guild.voice_client
-
-    if not voice_client or not voice_client.is_connected():
-        if vc_channel:
-            voice_client = await vc_channel.connect(reconnect=True, self_deaf=True)
-        else:
-            await interaction.followup.send("❌ Public VC channel nahi mila!")
-            return
-
-    try:
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False))
-        
-        if 'entries' in data:
-            data = data['entries'][0]
-
-        track_url = data['url']
-        track_title = data.get('title', 'Unknown Track')
-        track_duration = str(timedelta(seconds=data.get('duration', 0))) if data.get('duration') else "Live / Unknown"
-
-        song_info = {
-            'title': track_title,
-            'url': track_url,
-            'webpage_url': data.get('webpage_url', query),
-            'duration': track_duration,
-            'requester': interaction.user.mention
-        }
-
-        if voice_client.is_playing() or voice_client.is_paused():
-            song_queue.append(song_info)
-            embed = discord.Embed(
-                title="🎵  TRACK QUEUED",
-                description=f"**[{track_title}]({song_info['webpage_url']})**\n\n• **Duration:** `{track_duration}`\n• **Requested by:** {interaction.user.mention}",
-                color=0xFEE75C
-            )
-            embed.set_footer(text="PX 24/7 AUDIO ENGINE • PERSISTX")
-            await interaction.followup.send(embed=embed)
-        else:
-            global current_song
-            current_song = song_info
-            audio_source = discord.FFmpegPCMAudio(track_url, **FFMPEG_OPTIONS)
-            voice_client.play(audio_source, after=lambda e: play_next_song(guild))
-
-            embed = discord.Embed(
-                title="🔊  NOW PLAYING IN PUBLIC VC",
-                description=(
-                    f"**[{track_title}]({song_info['webpage_url']})**\n\n"
-                    f"• **Channel:** <#{PUBLIC_VC_ID}>\n"
-                    f"• **Duration:** `{track_duration}`\n"
-                    f"• **Status:** `Streaming 24/7`\n"
-                    f"• **Requested by:** {interaction.user.mention}"
-                ),
-                color=0x57F287
-            )
-            embed.set_footer(text="PERSISTX LUXURY AUDIO SUITE © 2026")
-            await interaction.followup.send(embed=embed)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Error loading track: `{str(e)[:150]}`")
-
-
-@bot.tree.command(name="skip", description="Skip currently playing track")
-async def skip(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-    if voice_client and voice_client.is_playing():
-        voice_client.stop()
-        await interaction.response.send_message("⏭️ Track skipped!")
-    else:
-        await interaction.response.send_message("❌ Koi track play nahi ho raha hai.", ephemeral=True)
-
-
-@bot.tree.command(name="pause", description="Pause current song")
-async def pause(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-    if voice_client and voice_client.is_playing():
-        voice_client.pause()
-        await interaction.response.send_message("⏸️ Music paused.")
-    else:
-        await interaction.response.send_message("❌ Music already paused hai ya playing nahi hai.", ephemeral=True)
-
-
-@bot.tree.command(name="resume", description="Resume paused song")
-async def resume(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-    if voice_client and voice_client.is_paused():
-        voice_client.resume()
-        await interaction.response.send_message("▶️ Music resumed.")
-    else:
-        await interaction.response.send_message("❌ Music paused nahi hai.", ephemeral=True)
-
-
-@bot.tree.command(name="stop", description="Clear music queue and stop playing (Bot stays in VC 24/7)")
-async def stop(interaction: discord.Interaction):
-    global current_song
-    voice_client = interaction.guild.voice_client
-    song_queue.clear()
-    current_song = None
-    if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
-        voice_client.stop()
-    await interaction.response.send_message("⏹️ Music stopped and queue cleared. Bot will remain in 24/7 Public VC.")
-
-
-@bot.tree.command(name="queue", description="View songs in queue")
-async def view_queue(interaction: discord.Interaction):
-    if not current_song and len(song_queue) == 0:
-        await interaction.response.send_message("📭 Queue bilkul empty hai.", ephemeral=True)
-        return
-
-    desc = ""
-    if current_song:
-        desc += f"**Now Playing:** `{current_song['title']}` ({current_song['duration']})\n\n**Upcoming Queue:**\n"
-
-    for i, track in enumerate(song_queue[:10], 1):
-        desc += f"`{i}.` {track['title']} (`{track['duration']}`) | {track['requester']}\n"
-
-    if len(song_queue) > 10:
-        desc += f"\n*...and {len(song_queue) - 10} more songs in queue.*"
-
-    embed = discord.Embed(title="✦  PERSISTX AUDIO QUEUE  ✦", description=desc, color=0xED4245)
-    await interaction.response.send_message(embed=embed)
-
-
-# --- Utility Commands ---
 @bot.tree.command(name="clear", description="Clear a specific number of chat messages")
 @app_commands.describe(amount="Messages count (Max: 100)")
 async def clear(interaction: discord.Interaction, amount: int):
@@ -1617,13 +1486,9 @@ async def help_command(interaction: discord.Interaction):
             "• `/pxticketsetup` — Refresh & post dynamic product tickets\n"
             "• `/giveaway` — Host a verified clean giveaway\n"
             "• `qr` — Auto-dispenses payment scanner (Works in Tickets & Client Channels)\n\n"
-            "**Music & Voice (24/7 in <#{PUBLIC_VC_ID}>)**\n"
-            "• `/joinvc` — Force-join bot to 24/7 Public VC\n"
-            "• `/play <query>` — Play YouTube/Spotify track title or URL\n"
-            "• `/skip` — Skip active song\n"
-            "• `/pause` & `/resume` — Control audio stream\n"
-            "• `/queue` — View upcoming queued tracks\n"
-            "• `/stop` — Clear queue (Bot stays in VC 24/7)\n\n"
+            "**Voice & TTS System**\n"
+            "• `/tts <text>` — Manually speak in your current Voice Channel\n"
+            "• *Auto TTS:* Kisi bhi VC me baith kar text likho, bot khud VC me aa kar bol dega (Hindi/English/Hinglish)\n\n"
             "**Administration & Moderation**\n"
             "• `/clear <amount>` — Purge chat history quickly\n"
             "• `/setpx` — Auto-apply `PX | ` tag across all members\n"
@@ -1642,7 +1507,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 18. Execution Start ---
+# --- 17. Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
