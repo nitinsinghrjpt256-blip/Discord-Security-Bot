@@ -14,7 +14,7 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PERSISTX Master Security & Management Bot is Online 24/7!"
+    return "PERSISTX Master Bot + Full OwO RPG System Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -34,7 +34,7 @@ intents.invites = True
 intents.reactions = True
 
 MY_SERVER_ID = 1525181999147388958
-MY_USER_ID = 1525179499602509977  # Sole Authorized Ticket Closer
+MY_USER_ID = 1525179499602509977  # Sole Authorized Closer & Unlimited Wealth
 
 AUTO_ROLE_IDS = [
     1525217661691236483,  # Family Role
@@ -51,7 +51,7 @@ CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
 
 TICKET_PANEL_CHANNEL_ID = 1525182000825237653  
-TICKET_CATEGORY_ID = 1525181999646507118       # Only Category with Auto-Inactivity Close
+TICKET_CATEGORY_ID = 1525181999646507118       # Only Category with Auto Inactivity-Close
 
 # Ticket Notification Logs
 TICKET_OPEN_LOG_ID = 1544967681898450985
@@ -79,11 +79,37 @@ ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 invites_cache = {}          
 user_invites = {}           
 member_invited_by = {}      
-user_balances = {}          
-daily_cooldowns = {}        
 channel_webhooks = {}       
 inactivity_warned = set()
 active_giveaways = set()
+
+# --- OwO RPG & Social In-Memory State ---
+DEFAULT_COINS = 10000
+user_balances = {}          
+daily_cooldowns = {}
+hunt_cooldowns = {}
+battle_cooldowns = {}
+daily_streaks = {}
+user_zoos = {}              # {user_id: {tier_name: count}}
+user_inventories = {}       # {user_id: {'crate': int, 'weapon': int, 'ring': int}}
+user_marriage = {}          # {user_id: partner_id}
+user_cookies = {}           # {user_id: count}
+server_lottery_pot = 25000
+server_lottery_entries = {} # {user_id: count}
+server_prefix = "owo"
+
+ANIMAL_TIERS = {
+    "common": {"price": 25, "animals": ["🐶 Dog", "🐱 Cat", "🐭 Mouse", "🐰 Rabbit", "🦊 Fox"]},
+    "uncommon": {"price": 60, "animals": ["🐻 Bear", "🐼 Panda", "🐨 Koala", "🐯 Tiger", "🦁 Lion"]},
+    "rare": {"price": 180, "animals": ["🦄 Unicorn", "🐲 Dragon", "🦖 T-Rex", "🦚 Peacock"]},
+    "mythic": {"price": 650, "animals": ["⚡ Phoenix", "🌌 Celestial Beast", "👑 Golden Griffin"]}
+}
+
+SHOP_CATALOG = {
+    "crate": {"price": 1000, "desc": "Mystery Lootbox (contains cowoncy or weapons)"},
+    "ring": {"price": 50000, "desc": "Wedding ring needed to marry someone"},
+    "weapon": {"price": 5000, "desc": "Increases win rate in owo battle"}
+}
 
 # Persistent Ticket Counter Logic
 COUNTER_FILE = "ticket_counter.txt"
@@ -195,7 +221,6 @@ class TicketCloseView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket 🔒", style=discord.ButtonStyle.danger, custom_id="px_ticket_close_btn")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Strict Restriction: Sirf Super Admin PERSISTX close kar sakta hai
         if interaction.user.id != MY_USER_ID:
             await interaction.response.send_message(
                 "❌ **Access Denied:** Sirf Super Admin <@1525179499602509977> hi ticket close kar sakte hain!",
@@ -286,9 +311,7 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 5. Economy Helpers (Default 10,000 & Unlimited Admin) ---
-DEFAULT_COINS = 10000
-
+# --- 5. Economy & Identity Helpers ---
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
         return 999_999_999_999
@@ -304,6 +327,16 @@ def update_user_balance(user_id: int, amount: int):
         return
     current = user_balances.get(user_id, DEFAULT_COINS)
     user_balances[user_id] = max(0, current + amount)
+
+def get_user_zoo(user_id: int) -> dict:
+    if user_id not in user_zoos:
+        user_zoos[user_id] = {"common": 0, "uncommon": 0, "rare": 0, "mythic": 0}
+    return user_zoos[user_id]
+
+def get_user_inv(user_id: int) -> dict:
+    if user_id not in user_inventories:
+        user_inventories[user_id] = {"crate": 0, "weapon": 0, "ring": 0}
+    return user_inventories[user_id]
 
 async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None, file=None):
     if not channel or channel.guild.id != MY_SERVER_ID:
@@ -594,14 +627,13 @@ async def force_fresh_ticket_panel(guild: discord.Guild):
         print(f"[PANEL POST ERROR]: {e}", flush=True)
 
 
-# --- 9. Inactivity Cleaner Task (ONLY for TICKET_CATEGORY_ID) ---
+# --- 9. Inactivity Cleaner Task (ONLY FOR TICKET_CATEGORY_ID) ---
 @tasks.loop(minutes=30)
 async def ghost_tickets_cleaner():
     guild = bot.get_guild(MY_SERVER_ID)
     if not guild:
         return
 
-    # ONLY fetch the ticket system category
     category = guild.get_channel(TICKET_CATEGORY_ID)
     if not category or not isinstance(category, discord.CategoryChannel):
         return
@@ -609,7 +641,6 @@ async def ghost_tickets_cleaner():
     now = datetime.utcnow()
 
     for channel in category.text_channels:
-        # STRICT SAFETY: Never touch Reseller, Custom Panel, or PX Client
         if channel.category_id in [RESELLER_CATEGORY_ID, CUSTOM_PANEL_CATEGORY_ID] or channel.id == PX_CLIENT_CHANNEL_ID:
             continue
             
@@ -628,7 +659,6 @@ async def ghost_tickets_cleaner():
 
             idle_duration = now - last_msg.created_at.replace(tzinfo=None)
 
-            # Warning after 24 hours of inactivity
             if idle_duration > timedelta(hours=24) and channel.id not in inactivity_warned:
                 inactivity_warned.add(channel.id)
                 warn_embed = discord.Embed(
@@ -643,7 +673,6 @@ async def ghost_tickets_cleaner():
                 warn_embed.set_footer(text="PX Automation System • Ghost Ticket Clean")
                 await send_custom_channel_msg(channel, "PX TICKET BOT", embed=warn_embed)
 
-            # Permanent Auto-Close after 30 hours (24h + 6h)
             elif idle_duration > timedelta(hours=30) and channel.id in inactivity_warned:
                 transcript_file = await generate_transcript(channel)
                 close_log = guild.get_channel(TICKET_CLOSE_LOG_ID)
@@ -880,7 +909,6 @@ async def on_member_join(member):
         return
     guild = member.guild
 
-    # 1. Strict Anti-Nuke
     if member.bot:
         inviter = None
         try:
@@ -900,7 +928,6 @@ async def on_member_join(member):
             await execute_antinuke_punishment(guild, inviter, f"Attempted to Add Bot: {member.name}")
         return
 
-    # 2. Auto-Role Assignment
     roles_to_add = []
     for r_id in AUTO_ROLE_IDS:
         role_obj = guild.get_role(r_id)
@@ -914,7 +941,6 @@ async def on_member_join(member):
         except Exception as e:
             print(f"[AUTO-ROLE ERROR]: {e}", flush=True)
 
-    # 3. Auto PX Tag
     if member.id != guild.owner_id:
         try:
             if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
@@ -922,7 +948,6 @@ async def on_member_join(member):
         except Exception:
             pass
 
-    # 4. Invite Tracker
     inviter = None
     try:
         current_invites = await guild.invites()
@@ -985,7 +1010,6 @@ async def on_member_join(member):
         embed.timestamp = datetime.utcnow()
         await send_custom_channel_msg(welcome_channel, "PX WELCOMER BOT", content=f"Welcome {member.mention}!", embed=embed)
 
-    # 5. Professional Luxury Welcome DM
     try:
         dm_embed = discord.Embed(
             title="✦  WELCOME TO PERSISTX OFFICIAL COMMUNITY  ✦",
@@ -1039,18 +1063,18 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 14. Message Event (Universal QR & OwO Mini-Games) ---
+# --- 14. Message Event (Universal QR & Complete OwO Bot Engine) ---
 @bot.event
 async def on_message(message):
+    global server_prefix, server_lottery_pot
     if message.author.bot or not message.guild:
         return
 
     content = message.content.strip()
     lowered = content.lower()
 
-    # --- COMPREHENSIVE QR ALLOWED CHECK ---
+    # --- QR ALLOWED CHECK (Tickets, PX Client, Reseller, Custom Panel) ---
     is_ticket_by_topic = bool(message.channel.topic and "Ticket #" in message.channel.topic)
-    
     cat_id = message.channel.category_id if hasattr(message.channel, 'category_id') else None
     cat_name = message.channel.category.name.lower() if message.channel.category else ""
     
@@ -1105,137 +1129,501 @@ async def on_message(message):
         await message.channel.send("✅ Dynamic ticket panel successfully refreshed & sent!")
         return
 
-    # OwO Mini-Games (Channel ID: 1548770349351575632)
-    if lowered.startswith("owo") or lowered.startswith("px owo"):
+    # =========================================================================
+    # COMPLETE OWO RPG & SOCIAL BOT ENGINE (Prefix: owo, w, or custom prefix)
+    # =========================================================================
+    has_prefix = False
+    args_str = ""
+
+    if lowered.startswith(f"{server_prefix} "):
+        has_prefix = True
+        args_str = content[len(server_prefix)+1:].strip()
+    elif lowered.startswith("owo "):
+        has_prefix = True
+        args_str = content[4:].strip()
+    elif lowered.startswith("w "):
+        has_prefix = True
+        args_str = content[2:].strip()
+    elif lowered in ["owo", "w", server_prefix]:
+        has_prefix = True
+        args_str = ""
+
+    if has_prefix:
         if message.guild.id != MY_SERVER_ID:
             await message.channel.send(ACCESS_DENIED_MSG)
             return
+
+        # Restrict OwO commands exclusively to OWO_CHANNEL_ID
         if message.channel.id != OWO_CHANNEL_ID:
+            await message.channel.send(f"❌ OwO RPG commands sirf <#{OWO_CHANNEL_ID}> me allow hain!", delete_after=5)
             return
 
-        parts = content.split()
-        if len(parts) == 1:
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"**{message.author.name}**! (Try `owo cash`, `owo daily`, `owo cf <amount>`, `owo s <amount>`, `owo mine <amount>`)")
-            return
+        parts = args_str.split()
+        cmd = parts[0].lower() if len(parts) > 0 else "help"
+        author = message.author
+        now = datetime.utcnow()
 
-        subcmd = parts[1].lower()
-
-        if subcmd in ["cash", "money", "bal", "balance"]:
-            display_bal = format_balance(message.author.id)
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"👛 **{message.author.display_name}**'s Balance: **{display_bal}** OwO Coins")
-
-        elif subcmd in ["daily"]:
-            now = datetime.utcnow()
-            last_claim = daily_cooldowns.get(message.author.id)
+        # ----------------- 1. ECONOMY & CORE -----------------
+        if cmd in ["daily"]:
+            last_claim = daily_cooldowns.get(author.id)
             if last_claim and (now - last_claim) < timedelta(hours=24):
                 rem = timedelta(hours=24) - (now - last_claim)
                 hours, remainder = divmod(int(rem.total_seconds()), 3600)
-                minutes, _ = divmod(remainder, 60)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"⏳ Next claim in `{hours}h {minutes}m`.")
+                mins, _ = divmod(remainder, 60)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"⏳ **{author.display_name}**, next daily available in **{hours}h {mins}m**!")
                 return
 
-            reward = 777
-            update_user_balance(message.author.id, reward)
-            daily_cooldowns[message.author.id] = now
-            display_bal = format_balance(message.author.id)
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎁 **{message.author.display_name}**, aapko daily **777** OwO Coins mile! Total: **{display_bal}**")
+            streak = daily_streaks.get(author.id, 0) + 1
+            daily_streaks[author.id] = streak
+            reward = 777 + (streak * 10)
+            update_user_balance(author.id, reward)
+            daily_cooldowns[author.id] = now
+            disp_bal = format_balance(author.id)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎁 **{author.display_name}**, aapko **{reward:,}** Cowoncy mile! (Streak: `{streak} Days` 🔥 | Balance: **{disp_bal}**)")
 
-        elif subcmd in ["mine", "mines"]:
-            if len(parts) < 3:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo mine <amount>`")
+        elif cmd in ["money", "cash", "cowoncy", "bal", "balance"]:
+            target_user = message.mentions[0] if message.mentions else author
+            disp_bal = format_balance(target_user.id)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"👛 **{target_user.display_name}** has **{disp_bal}** Cowoncy (owo coins)!")
+
+        elif cmd in ["give", "send", "pay"]:
+            if len(message.mentions) == 0 or len(parts) < 3:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo give @user <amount>`")
+                return
+            target = message.mentions[0]
+            if target.id == author.id:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Aap khud ko coins send nahi kar sakte!")
                 return
             try:
-                bet = int(parts[2])
+                amount = int(parts[2])
             except ValueError:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Amount valid number hona chahiye!")
                 return
-            if bet <= 0:
+            if amount <= 0:
                 return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and bet > bal:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Insufficient balance!")
+            bal = get_user_balance(author.id)
+            if author.id != MY_USER_ID and amount > bal:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Insufficient cowoncy balance!")
                 return
 
-            view = MinesGameView(message.author, bet)
-            await message.channel.send(
-                content=f"💣 **MINES GAME STARTED** | Bet: **{bet:,}** OwO Coins\nGrid me **3 Hidden Bombs (💣)** hain. 💎 dhoondhein aur Cashout karein!",
-                view=view
+            update_user_balance(author.id, -amount)
+            update_user_balance(target.id, amount)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💸 **{author.display_name}** transferred **{amount:,}** Cowoncy to {target.mention}!")
+
+        elif cmd in ["quest"]:
+            embed = discord.Embed(
+                title=f"📜 {author.display_name}'s Daily Quests",
+                description=(
+                    "• `[1]` Hunt 5 animals in zoo: **(Progress: 3/5)** 🐾\n"
+                    "• `[2]` Win 1 coinflip game: **(Completed)** ✅\n"
+                    "• `[3]` Send a cookie to a friend: **(Progress: 0/1)** 🍪\n\n"
+                    "Reward on all completed: **+2,500 Cowoncy**"
+                ),
+                color=0x57F287
             )
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
 
-        elif subcmd in ["cf", "coinflip"]:
-            if len(parts) < 3:
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo cf <amount> [h/t]`")
-                return
-            try:
-                bet = int(parts[2])
-            except ValueError:
-                return
-            if bet <= 0:
-                return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and bet > bal:
-                return
-            choice = parts[3].lower()[0] if len(parts) >= 4 else "h"
-            choice_str = "Heads" if choice == "h" else "Tails"
-            result = random.choice(["Heads", "Tails"])
+        elif cmd in ["checklist", "cl"]:
+            embed = discord.Embed(
+                title=f"📋 OwO Daily Checklist for {author.display_name}",
+                description=(
+                    f"✅ **Daily Claim:** {'Claimed today' if (author.id in daily_cooldowns and (now - daily_cooldowns[author.id]) < timedelta(hours=24)) else 'Ready to claim (`owo daily`)'}\n"
+                    f"🐾 **Hunt:** Ready (`owo h`)\n"
+                    f"⚔️ **Battle:** Ready (`owo b`)\n"
+                    f"🎰 **Lottery Ticket:** {'Entered' if author.id in server_lottery_entries else 'Not entered (`owo lottery 100`)'}\n"
+                    f"🍪 **Cookies Given:** `{user_cookies.get(author.id, 0)}`"
+                ),
+                color=0xFEE75C
+            )
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
 
-            if result == choice_str:
-                update_user_balance(message.author.id, bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 Lands on **{result}**! 🎉 Won **{bet:,}** Coins! (Balance: **{display_bal}**)")
+        elif cmd in ["shop"]:
+            desc = "**Available OwO Shop Items:**\n\n"
+            for k, v in SHOP_CATALOG.items():
+                desc += f"• **`{k.upper()}`** — `{v['price']:,} Cowoncy`\n  *{v['desc']}*\n\n"
+            desc += "*Use `owo buy <item>` to purchase!*"
+            embed = discord.Embed(title="🛒 PERSISTX • OWO OFFICIAL SHOP", description=desc, color=0xED4245)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
+
+        elif cmd in ["buy"]:
+            if len(parts) < 2:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo buy <crate|ring|weapon>`")
+                return
+            item = parts[1].lower()
+            if item not in SHOP_CATALOG:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Item shop me nahi mila! Type `owo shop` dekhein.")
+                return
+
+            cost = SHOP_CATALOG[item]["price"]
+            bal = get_user_balance(author.id)
+            if author.id != MY_USER_ID and cost > bal:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Aapke paas is item ke liye coins kam hain!")
+                return
+
+            update_user_balance(author.id, -cost)
+            inv = get_user_inv(author.id)
+            inv[item] = inv.get(item, 0) + 1
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🛍️ **{author.display_name}** bought 1x **{item.upper()}** for **{cost:,}** Cowoncy! (Inv: `{inv[item]}`)")
+
+        # ----------------- 2. HUNTING, ZOO & BATTLING -----------------
+        elif cmd in ["hunt", "h"]:
+            last_hunt = hunt_cooldowns.get(author.id)
+            if last_hunt and (now - last_hunt) < timedelta(seconds=15):
+                rem_sec = 15 - int((now - last_hunt).total_seconds())
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🌲 Wait `{rem_sec}s` before hunting again!")
+                return
+
+            hunt_cooldowns[author.id] = now
+            roll = random.random()
+            if roll < 0.55:
+                tier = "common"
+            elif roll < 0.85:
+                tier = "uncommon"
+            elif roll < 0.97:
+                tier = "rare"
             else:
-                update_user_balance(message.author.id, -bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 Lands on **{result}**! 💀 Lost **{bet:,}** Coins. (Balance: **{display_bal}**)")
+                tier = "mythic"
 
-        elif subcmd in ["s", "slot", "slots"]:
-            if len(parts) < 3:
+            animal_name = random.choice(ANIMAL_TIERS[tier]["animals"])
+            zoo = get_user_zoo(author.id)
+            zoo[tier] += 1
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🌲 **{author.display_name}**, aapne jangal se ek **{tier.upper()}** animal pakad liya! 👉 **{animal_name}**!")
+
+        elif cmd in ["zoo"]:
+            zoo = get_user_zoo(author.id)
+            desc = (
+                f"🐶 **Common Animals:** `{zoo['common']}`\n"
+                f"🐼 **Uncommon Animals:** `{zoo['uncommon']}`\n"
+                f"🐲 **Rare Animals:** `{zoo['rare']}`\n"
+                f"⚡ **Mythic Animals:** `{zoo['mythic']}`\n\n"
+                f"📊 *Total Zoo Animals:* `{sum(zoo.values())}`\n"
+                f"*Use `owo sell <tier|all>` to sell animals for cash.*"
+            )
+            embed = discord.Embed(title=f"🐾 {author.display_name}'s Zoo Reserve", description=desc, color=0x57F287)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
+
+        elif cmd in ["sell"]:
+            if len(parts) < 2:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo sell <common|uncommon|rare|mythic|all>`")
+                return
+            tier_choice = parts[1].lower()
+            zoo = get_user_zoo(author.id)
+
+            if tier_choice == "all":
+                total_earned = 0
+                for t, data in ANIMAL_TIERS.items():
+                    count = zoo[t]
+                    total_earned += count * data["price"]
+                    zoo[t] = 0
+                if total_earned == 0:
+                    await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Zoo me sell karne ke liye koi animals nahi hain!")
+                    return
+                update_user_balance(author.id, total_earned)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💰 Aapne saare animals bech kar **{total_earned:,}** Cowoncy kama liye!")
+            elif tier_choice in ANIMAL_TIERS:
+                count = zoo[tier_choice]
+                if count <= 0:
+                    await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Aapke paas ek bhi `{tier_choice}` animal nahi hai!")
+                    return
+                earned = count * ANIMAL_TIERS[tier_choice]["price"]
+                zoo[tier_choice] = 0
+                update_user_balance(author.id, earned)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💰 Sold `{count}`x **{tier_choice.upper()}** for **{earned:,}** Cowoncy!")
+            else:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Invalid tier! Choose: `common`, `uncommon`, `rare`, `mythic`, ya `all`.")
+
+        elif cmd in ["inv", "inventory"]:
+            inv = get_user_inv(author.id)
+            desc = (
+                f"📦 **Mystery Crates:** `{inv.get('crate', 0)}`\n"
+                f"⚔️ **Battle Weapons:** `{inv.get('weapon', 0)}`\n"
+                f"💍 **Marriage Rings:** `{inv.get('ring', 0)}`\n"
+            )
+            embed = discord.Embed(title=f"🎒 {author.display_name}'s Backpack", description=desc, color=0xED4245)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
+
+        elif cmd in ["lootbox", "lb", "crate"]:
+            inv = get_user_inv(author.id)
+            if inv.get("crate", 0) <= 0:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Aapke paas koi crate nahi hai! (`owo buy crate` se khareedein).")
+                return
+            inv["crate"] -= 1
+            win_coins = random.randint(800, 3500)
+            update_user_balance(author.id, win_coins)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎁 **CRATE OPENED!** {author.mention} found **{win_coins:,}** Cowoncy inside!")
+
+        elif cmd in ["battle", "b"]:
+            last_b = battle_cooldowns.get(author.id)
+            if last_b and (now - last_b) < timedelta(seconds=20):
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="⏳ Pet team is resting! Try in a few seconds.")
+                return
+            battle_cooldowns[author.id] = now
+            inv = get_user_inv(author.id)
+            bonus = 15 if inv.get("weapon", 0) > 0 else 0
+            roll = random.randint(1, 100) + bonus
+
+            if roll >= 45:
+                loot = random.randint(400, 1500)
+                update_user_balance(author.id, loot)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"⚔️ **VICTORY!** {author.display_name}'s battle team defeated the dungeon boss! Won **{loot:,}** Cowoncy!")
+            else:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💀 **DEFEAT!** Boss was too strong. (Buy weapons in `owo shop` for higher winrate!)")
+
+        elif cmd in ["team"]:
+            zoo = get_user_zoo(author.id)
+            embed = discord.Embed(
+                title=f"🛡️ {author.display_name}'s Battle Squad",
+                description=(
+                    f"• **Slot 1 (Tank):** {'🐲 Dragon' if zoo['rare'] > 0 else '🐻 Bear'}\n"
+                    f"• **Slot 2 (DPS):** {'⚡ Phoenix' if zoo['mythic'] > 0 else '🐯 Tiger'}\n"
+                    f"• **Slot 3 (Support):** {'🦄 Unicorn' if zoo['rare'] > 1 else '🐶 Dog'}\n\n"
+                    f"Weapon Boost: `{'+15% Power' if get_user_inv(author.id).get('weapon', 0) > 0 else 'None'}`"
+                ),
+                color=0xED4245
+            )
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
+
+        elif cmd in ["owodex"]:
+            zoo = get_user_zoo(author.id)
+            total_species = 14
+            collected = min(total_species, sum(1 for v in zoo.values() if v > 0) * 3 + random.randint(1, 2))
+            pct = int((collected / total_species) * 100)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"📖 **OwOdex Progress for {author.display_name}:** `{collected}/{total_species}` ({pct}% Complete) 🐾")
+
+        # ----------------- 3. GAMBLING -----------------
+        elif cmd in ["slots", "s"]:
+            if len(parts) < 2:
                 await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo s <amount>`")
                 return
             try:
-                bet = int(parts[2])
+                bet = int(parts[1])
             except ValueError:
                 return
             if bet <= 0:
                 return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and bet > bal:
+            bal = get_user_balance(author.id)
+            if author.id != MY_USER_ID and bet > bal:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Insufficient balance!")
                 return
 
             icons = ["🍒", "🍋", "🍇", "💎", "7️⃣"]
             r1, r2, r3 = random.choice(icons), random.choice(icons), random.choice(icons)
             if r1 == r2 == r3:
                 winnings = bet * 4
-                update_user_balance(message.author.id, winnings)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n🔥 **JACKPOT!** Won **{winnings:,}** Coins!")
+                update_user_balance(author.id, winnings)
+                disp_bal = format_balance(author.id)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n🔥 **JACKPOT!** Won **{winnings:,}** Cowoncy! (Balance: **{disp_bal}**)")
             elif r1 == r2 or r2 == r3 or r1 == r3:
                 winnings = int(bet * 1.5)
-                update_user_balance(message.author.id, winnings - bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n✨ Small Win! Won **{winnings:,}** Coins!")
+                update_user_balance(author.id, winnings - bet)
+                disp_bal = format_balance(author.id)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n✨ Small Win! Won **{winnings:,}** Cowoncy! (Balance: **{disp_bal}**)")
             else:
-                update_user_balance(message.author.id, -bet)
-                display_bal = format_balance(message.author.id)
-                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n💔 Lost **{bet:,}** coins.")
+                update_user_balance(author.id, -bet)
+                disp_bal = format_balance(author.id)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎰 [ {r1} | {r2} | {r3} ]\n💔 Lost **{bet:,}** Cowoncy.")
 
-        elif subcmd in ["give", "pay", "send"]:
-            if len(message.mentions) == 0 or len(parts) < 4:
-                return
-            target = message.mentions[0]
-            if target.id == message.author.id:
+        elif cmd in ["coinflip", "cf"]:
+            if len(parts) < 2:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo cf <amount> [h/t]`")
                 return
             try:
-                amount = int(parts[3])
+                bet = int(parts[1])
             except ValueError:
                 return
-            if amount <= 0:
+            if bet <= 0:
                 return
-            bal = get_user_balance(message.author.id)
-            if message.author.id != MY_USER_ID and amount > bal:
+            bal = get_user_balance(author.id)
+            if author.id != MY_USER_ID and bet > bal:
                 return
-            update_user_balance(message.author.id, -amount)
-            update_user_balance(target.id, amount)
-            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💸 Transferred **{amount:,}** Coins to {target.mention}!")
+            choice = parts[2].lower()[0] if len(parts) >= 3 else "h"
+            choice_str = "Heads" if choice == "h" else "Tails"
+            result = random.choice(["Heads", "Tails"])
+
+            if result == choice_str:
+                update_user_balance(author.id, bet)
+                disp_bal = format_balance(author.id)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 Lands on **{result}**! 🎉 Won **{bet:,}** Coins! (Balance: **{disp_bal}**)")
+            else:
+                update_user_balance(author.id, -bet)
+                disp_bal = format_balance(author.id)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🪙 Lands on **{result}**! 💀 Lost **{bet:,}** Coins. (Balance: **{disp_bal}**)")
+
+        elif cmd in ["blackjack", "bj"]:
+            if len(parts) < 2:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo bj <amount>`")
+                return
+            try:
+                bet = int(parts[1])
+            except ValueError:
+                return
+            bal = get_user_balance(author.id)
+            if author.id != MY_USER_ID and bet > bal:
+                return
+
+            player_score = random.randint(16, 21)
+            dealer_score = random.randint(15, 22)
+            if dealer_score > 21 or player_score > dealer_score:
+                win = bet
+                update_user_balance(author.id, win)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🃏 **BLACKJACK!** You: `{player_score}` | Dealer: `{dealer_score if dealer_score <= 21 else 'Bust'}`. You won **{win:,}** Cowoncy!")
+            elif player_score == dealer_score:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🃏 **PUSH!** Both scored `{player_score}`. Bet returned.")
+            else:
+                update_user_balance(author.id, -bet)
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🃏 **DEALER WINS!** You: `{player_score}` | Dealer: `{dealer_score}`. Lost **{bet:,}** Cowoncy.")
+
+        elif cmd in ["lottery"]:
+            if len(parts) < 2:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎟️ **Server Lottery Pot:** `{server_lottery_pot:,}` Cowoncy! (Use `owo lottery <amount>` to buy tickets)")
+                return
+            try:
+                tickets = int(parts[1])
+            except ValueError:
+                return
+            if tickets <= 0:
+                return
+            cost = tickets * 100
+            bal = get_user_balance(author.id)
+            if author.id != MY_USER_ID and cost > bal:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Insufficient cowoncy!")
+                return
+            update_user_balance(author.id, -cost)
+            server_lottery_pot += cost
+            server_lottery_entries[author.id] = server_lottery_entries.get(author.id, 0) + tickets
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎟️ **{author.display_name}** bought `{tickets}` lottery tickets! Current Pot: **{server_lottery_pot:,}** Cowoncy!")
+
+        # ----------------- 4. SOCIAL & FUN -----------------
+        elif cmd in ["profile"]:
+            target = message.mentions[0] if message.mentions else author
+            disp_bal = format_balance(target.id)
+            partner = user_marriage.get(target.id)
+            partner_str = f"<@{partner}>" if partner else "Single 💔"
+            zoo = get_user_zoo(target.id)
+            desc = (
+                f"🪙 **Cowoncy:** `{disp_bal}`\n"
+                f"💍 **Relationship:** {partner_str}\n"
+                f"🍪 **Cookies Received:** `{user_cookies.get(target.id, 0)}`\n"
+                f"🐾 **Animals Caught:** `{sum(zoo.values())}`\n"
+                f"🔥 **Daily Streak:** `{daily_streaks.get(target.id, 0)} Days`\n"
+            )
+            embed = discord.Embed(title=f"🌸 {target.display_name}'s OwO Profile", description=desc, color=0xFEE75C)
+            embed.set_thumbnail(url=target.display_avatar.url)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
+
+        elif cmd in ["marry"]:
+            if len(message.mentions) == 0:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Mention someone to marry! (`owo marry @user`)")
+                return
+            target = message.mentions[0]
+            if target.id == author.id:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Aap khud se shaadi nahi kar sakte!")
+                return
+            inv = get_user_inv(author.id)
+            if inv.get("ring", 0) <= 0:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="💍 Shaadi karne ke liye pehle `owo buy ring` khareedein!")
+                return
+
+            user_marriage[author.id] = target.id
+            user_marriage[target.id] = author.id
+            inv["ring"] -= 1
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💍 💖 **CONGRATULATIONS!** {author.mention} and {target.mention} are now married!")
+
+        elif cmd in ["divorce"]:
+            if author.id not in user_marriage:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Aap pehle se hi single hain!")
+                return
+            old_p = user_marriage.pop(author.id, None)
+            if old_p in user_marriage:
+                user_marriage.pop(old_p, None)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"💔 **{author.display_name}** has divorced their partner.")
+
+        elif cmd in ["pray"]:
+            target = message.mentions[0] if message.mentions else author
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🙏 **{author.display_name}** prayed for {target.mention}! Their RNG luck has been blessed for 10 minutes! ✨")
+
+        elif cmd in ["curse"]:
+            target = message.mentions[0] if message.mentions else author
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"😈 **{author.display_name}** cast a dark curse upon {target.mention}! May their rolls be unlucky! 💀")
+
+        elif cmd in ["cookie"]:
+            if len(message.mentions) == 0:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Mention kijiye kisko cookie deni hai! (`owo cookie @user`)")
+                return
+            target = message.mentions[0]
+            user_cookies[target.id] = user_cookies.get(target.id, 0) + 1
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🍪 **{author.display_name}** gave a sweet cookie to {target.mention}! (Total: `{user_cookies[target.id]}` cookies)")
+
+        elif cmd in ["8b"]:
+            if len(parts) < 2:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Question puchiye! (`owo 8b will I win?`)")
+                return
+            answers = ["Yes, absolutely! 🔮", "No way 💀", "Signs point to yes ✨", "Ask again later 🤔", "Very doubtful ❌"]
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎱 **8-Ball says:** {random.choice(answers)}")
+
+        # ----------------- 5. ROLEPLAY EMOTES -----------------
+        elif cmd in ["hug", "kiss", "slap", "pat", "bite", "cuddle"]:
+            if len(message.mentions) == 0:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Mention someone to {cmd}!")
+                return
+            target = message.mentions[0]
+            emojis = {"hug": "🫂", "kiss": "💋", "slap": "👋💥", "pat": "💆", "bite": "🧛", "cuddle": "🧸"}
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"{emojis[cmd]} **{author.display_name}** {cmd}ed {target.mention}!")
+
+        elif cmd in ["blush", "cry", "dance", "pout", "smile", "smug"]:
+            self_actions = {
+                "blush": "is blushing warmly (//∇//) 💖",
+                "cry": "is crying tears of sadness (╥﹏╥) 💧",
+                "dance": "is dancing happily ヾ(⌐■_■)ノ♪ 🕺",
+                "pout": "is pouting ( ಠ ʖ̯ ಠ ) 💢",
+                "smile": "smiles brightly (◕‿◕) ✨",
+                "smug": "looks smug ( ͡° ͜ʖ ͡°) 😏"
+            }
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"✧ **{author.display_name}** {self_actions[cmd]}")
+
+        # ----------------- 6. UTILITY & LEADERBOARD -----------------
+        elif cmd in ["top", "leaderboard"]:
+            sorted_richest = sorted(user_balances.items(), key=lambda x: x[1], reverse=True)[:5]
+            desc = "🏆 **Richest Players in Server:**\n\n"
+            for rank, (u_id, coins) in enumerate(sorted_richest, 1):
+                user_obj = bot.get_user(u_id)
+                u_name = user_obj.name if user_obj else f"User {u_id}"
+                desc += f"`#{rank}` **{u_name}** — `{coins:,}` Cowoncy\n"
+            embed = discord.Embed(title="👑 PERSISTX OWO LEADERBOARD", description=desc, color=0xFEE75C)
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
+
+        elif cmd in ["prefix"]:
+            if not author.guild_permissions.administrator and author.id != MY_USER_ID:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Only Admin can change the prefix!")
+                return
+            if len(parts) < 2:
+                await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"Current prefix: `{server_prefix}`. Usage: `owo prefix <new_prefix>`")
+                return
+            server_prefix = parts[1].lower()
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"✅ Server OwO prefix updated to: `{server_prefix}`!")
+
+        elif cmd in ["help"]:
+            embed = discord.Embed(
+                title="✦ PERSISTX • OWO SYSTEM DIRECTORY ✦",
+                description=(
+                    "**🪙 Economy & Core**\n"
+                    "`owo daily` `owo cash` `owo give @user <amt>` `owo quest` `owo checklist` `owo shop` `owo buy <item>`\n\n"
+                    "**🐾 Animals, Hunting & Battle**\n"
+                    "`owo hunt` `owo zoo` `owo sell <tier|all>` `owo inv` `owo crate` `owo battle` `owo team` `owo owodex`\n\n"
+                    "**🎰 Gambling**\n"
+                    "`owo slots <amt>` `owo coinflip <amt> <h/t>` `owo bj <amt>` `owo lottery <amt>` `owo mine <amt>`\n\n"
+                    "**💖 Social & Fun**\n"
+                    "`owo profile` `owo marry @user` `owo divorce` `owo pray` `owo curse` `owo cookie @user` `owo 8b <q>`\n\n"
+                    "**🎭 Roleplay Emotes**\n"
+                    "`owo hug` `owo kiss` `owo slap` `owo pat` `owo blush` `owo cry` `owo dance` `owo smug`\n\n"
+                    "**📊 Utilities**\n"
+                    "`owo top` `owo prefix <new>`"
+                ),
+                color=0xED4245
+            )
+            embed.set_footer(text="Default Balance: 10,000 Coins | Daily: 777 Coins")
+            await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
+        return
 
     await bot.process_commands(message)
 
@@ -1427,13 +1815,9 @@ async def help_command(interaction: discord.Interaction):
             "• `/clear <amount>` — Purge chat history quickly\n"
             "• `/setpx` — Auto-apply `PX | ` tag across all members\n"
             "• `/ping` — Check bot latency\n\n"
-            "**Economy & Games (In <#{OWO_CHANNEL_ID}>)**\n"
-            "• `owo cash` / `/owo cash` — View coin reserves (Default: 10,000)\n"
-            "• `owo daily` — Claim daily 777 bonus coins\n"
-            "• `owo mine <bet>` / `/owo mine <bet>` — Interactive 3x3 Mines\n"
-            "• `owo cf <bet> [h/t]` — 50/50 Coin Flip\n"
-            "• `owo s <bet>` — Casino Slots\n"
-            "• `owo give @user <amount>` — Transfer coins\n"
+            "**Complete OwO RPG System (In <#{OWO_CHANNEL_ID}>)**\n"
+            "• Prefix: `owo <cmd>` or `w <cmd>`\n"
+            "• Try: `owo daily`, `owo cash`, `owo hunt`, `owo zoo`, `owo sell all`, `owo shop`, `owo buy crate`, `owo battle`, `owo profile`, `owo marry @user`\n"
         ),
         color=0xED4245
     )
@@ -1441,7 +1825,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 16. Execution Start ---
+# --- 16. Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
