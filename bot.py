@@ -1,6 +1,7 @@
 import os
 import io
 import random
+import shutil
 import asyncio
 import threading
 from datetime import datetime, timedelta
@@ -9,13 +10,14 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from gtts import gTTS
+import imageio_ffmpeg
 
 # --- 1. Web Server (Render 24/7 Keep Alive) ---
 web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "PERSISTX Master Bot with Multi-Language TTS is Online 24/7!"
+    return "PERSISTX Master Bot is Online 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -44,10 +46,10 @@ AUTO_ROLE_IDS = [
 ]
 
 # Channels
-WELCOME_CHANNEL_ID = 1525182000825237648       # PX WELCOMER BOT
-INVITE_LOG_CHANNEL_ID = 1548745613640859729    # PX INVITER BOT
-LEAVE_CHANNEL_ID = 1548745646717014029         # PX LEAVE BOT
-OWO_CHANNEL_ID = 1548770349351575632           # PX OWO BOT
+WELCOME_CHANNEL_ID = 1525182000825237648
+INVITE_LOG_CHANNEL_ID = 1548745613640859729
+LEAVE_CHANNEL_ID = 1548745646717014029
+OWO_CHANNEL_ID = 1548770349351575632
 
 CHAT_CHANNEL_ID = 1536673179010080860
 RULE_CHANNEL_ID = 1525203386025119807
@@ -66,14 +68,6 @@ ANDROID_CATEGORY_ID = 1525182001097998345
 # PX Client Channel
 PX_CLIENT_CHANNEL_ID = 1549535112620679251
 
-# Designated Target Voice Channels
-TARGET_VC_IDS = [
-    1536673850358636614,
-    1536674419315974254,
-    1536674892081266749,
-    1536678628581056582
-]
-
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
 
@@ -87,9 +81,22 @@ channel_webhooks = {}
 inactivity_warned = set()
 active_giveaways = set()
 
-# TTS Audio Queue
+# TTS Audio State
 tts_queue = []
 is_tts_playing = False
+voice_lock = asyncio.Lock()
+
+# Detect FFmpeg executable
+def get_ffmpeg_path():
+    sys_path = shutil.which("ffmpeg")
+    if sys_path:
+        return sys_path
+    try:
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+FFMPEG_EXECUTABLE = get_ffmpeg_path()
 
 # Persistent Counter Logic
 COUNTER_FILE = "ticket_counter.txt"
@@ -284,7 +291,7 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 5. TTS Voice Engine Core (Hindi, English & Hinglish) ---
+# --- 5. Robust TTS Engine Core (Safe Voice Lock) ---
 def play_next_tts(guild: discord.Guild):
     global is_tts_playing
     if len(tts_queue) > 0:
@@ -292,14 +299,24 @@ def play_next_tts(guild: discord.Guild):
         file_path = tts_queue.pop(0)
         voice_client = guild.voice_client
         if voice_client and voice_client.is_connected():
-            audio_source = discord.FFmpegPCMAudio(file_path)
-            voice_client.play(audio_source, after=lambda e: on_tts_finish(guild, file_path))
+            try:
+                audio_source = discord.FFmpegPCMAudio(
+                    file_path,
+                    executable=FFMPEG_EXECUTABLE,
+                    options='-filter:a "volume=1.2"'
+                )
+                voice_client.play(audio_source, after=lambda e: on_tts_finish(guild, file_path, e))
+            except Exception as err:
+                print(f"[TTS PLAY ERROR]: {err}", flush=True)
+                on_tts_finish(guild, file_path, err)
         else:
             is_tts_playing = False
     else:
         is_tts_playing = False
 
-def on_tts_finish(guild: discord.Guild, file_path: str):
+def on_tts_finish(guild: discord.Guild, file_path: str, error=None):
+    if error:
+        print(f"[TTS FINISH ERROR]: {error}", flush=True)
     try:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -307,21 +324,40 @@ def on_tts_finish(guild: discord.Guild, file_path: str):
         pass
     play_next_tts(guild)
 
+async def get_or_connect_vc(channel: discord.VoiceChannel):
+    async with voice_lock:
+        guild = channel.guild
+        voice_client = guild.voice_client
+
+        if voice_client and voice_client.is_connected():
+            if voice_client.channel.id != channel.id:
+                try:
+                    await voice_client.move_to(channel)
+                except Exception as e:
+                    print(f"[VOICE MOVE ERROR]: {e}", flush=True)
+            return voice_client
+
+        if voice_client:
+            try:
+                await voice_client.disconnect(force=True)
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+
+        try:
+            vc = await channel.connect(timeout=15.0, reconnect=True, self_deaf=False)
+            return vc
+        except Exception as e:
+            print(f"[VOICE CONNECT FAILED]: {e}", flush=True)
+            return None
+
 async def speak_text_in_vc(target_channel: discord.VoiceChannel, text: str, user_name: str):
     guild = target_channel.guild
-    voice_client = guild.voice_client
+    voice_client = await get_or_connect_vc(target_channel)
 
-    # Connect or switch channel seamlessly (Private channels included)
-    try:
-        if not voice_client or not voice_client.is_connected():
-            voice_client = await target_channel.connect(timeout=20.0, reconnect=True, self_deaf=True)
-        elif voice_client.channel.id != target_channel.id:
-            await voice_client.move_to(target_channel)
-    except Exception as e:
-        print(f"[TTS CONNECT ERROR]: {e}", flush=True)
+    if not voice_client or not voice_client.is_connected():
         return
 
-    # Generate Audio using Hindi phonetics (Flawlessly reads Hindi, English, and Roman Hinglish)
     clean_speech = f"{user_name} bol raha hai: {text}"
     file_name = f"tts_{random.randint(10000, 99999)}_{int(datetime.utcnow().timestamp())}.mp3"
 
@@ -840,6 +876,7 @@ async def on_ready():
     print(f"\n==========================================", flush=True)
     print(f"[ONLINE] Logged in as: {bot.user.name} ({bot.user.id})", flush=True)
     print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
+    print(f"[FFMPEG] Detected Binary: {FFMPEG_EXECUTABLE}", flush=True)
     print(f"==========================================\n", flush=True)
 
     guild = bot.get_guild(MY_SERVER_ID)
@@ -1077,7 +1114,7 @@ async def on_member_remove(member):
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 15. Message Event (TTS Auto-Speaker, QR & Games) ---
+# --- 15. Message Event (TTS Auto-Speaker, Universal QR & Games) ---
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -1086,8 +1123,7 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # --- 1. DYNAMIC TTS VOICE TRIGGER (VC Auto-Connect & Speak) ---
-    # Trigger logic: If author is in ANY voice channel (private/public), or chat is inside VC
+    # --- 1. DYNAMIC TTS VOICE TRIGGER ---
     voice_state = message.author.voice
     target_vc = None
 
@@ -1096,16 +1132,13 @@ async def on_message(message):
     elif isinstance(message.channel, discord.VoiceChannel):
         target_vc = message.channel
 
-    # Agar user kisi bhi VC me hai aur message commands/qr nahi hai toh bol kar bataye
     if target_vc and not content.startswith(('!', '/', 'owo', 'px owo', 'qr')):
-        # Avoid reading long essay spam
         text_to_speak = content[:200]
         display_name = message.author.display_name.replace("PX | ", "")
         asyncio.create_task(speak_text_in_vc(target_vc, text_to_speak, display_name))
 
-    # --- 2. QR ALLOWED CHECK (Tickets & PX Client Channels) ---
+    # --- 2. UNIVERSAL QR TRIGGER (Ticket Category, PX Client, Topic Match) ---
     is_ticket_by_topic = bool(message.channel.topic and "Ticket #" in message.channel.topic)
-    
     cat_name = message.channel.category.name.lower() if message.channel.category else ""
     is_in_allowed_category = (
         (hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID)
