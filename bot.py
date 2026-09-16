@@ -61,8 +61,16 @@ TICKET_CLOSE_LOG_ID = 1544391704323563612
 PC_CATEGORY_ID = 1525182001097998339
 ANDROID_CATEGORY_ID = 1525182001097998345
 
-# PX Client Channel
+# Specific QR Trigger Destinations
 PX_CLIENT_CHANNEL_ID = 1549535112620679251
+RESELLER_CATEGORY_ID = 1549737126109773824
+CUSTOM_PANEL_CATEGORY_ID = 1549737170691166289
+
+QR_ALLOWED_CATEGORY_IDS = [
+    TICKET_CATEGORY_ID,
+    RESELLER_CATEGORY_ID,
+    CUSTOM_PANEL_CATEGORY_ID
+]
 
 QR_IMAGE_URL = "https://cdn.discordapp.com/attachments/1525182000825237654/1547499435225911346/image.png?ex=6aa99368&is=6aa841e8&hm=ff5c6c833995f75802abfc9c57bd1226ebb87766937e78c32de84810844530d4&"
 ACCESS_DENIED_MSG = "❌ Access Denied: For Use Contact Super Admin PERSISTX !"
@@ -270,11 +278,13 @@ class SecurityBot(commands.Bot):
 bot = SecurityBot()
 
 
-# --- 5. Economy & Identity Helpers ---
+# --- 5. Economy Helpers (Default 10,000 & Unlimited Admin) ---
+DEFAULT_COINS = 10000
+
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
         return 999_999_999_999
-    return user_balances.get(user_id, 1000)
+    return user_balances.get(user_id, DEFAULT_COINS)
 
 def format_balance(user_id: int) -> str:
     if user_id == MY_USER_ID:
@@ -284,7 +294,7 @@ def format_balance(user_id: int) -> str:
 def update_user_balance(user_id: int, amount: int):
     if user_id == MY_USER_ID:
         return
-    current = user_balances.get(user_id, 1000)
+    current = user_balances.get(user_id, DEFAULT_COINS)
     user_balances[user_id] = max(0, current + amount)
 
 async def send_custom_channel_msg(channel: discord.TextChannel, bot_name: str, content=None, embed=None, view=None, file=None):
@@ -770,6 +780,8 @@ async def on_ready():
     print(f"\n==========================================", flush=True)
     print(f"[ONLINE] Logged in as: {bot.user.name} ({bot.user.id})", flush=True)
     print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
+    print(f"[ECONOMY] Default Balance: {DEFAULT_COINS:,} | Daily: 777 | Admin: Unlimited (∞)", flush=True)
+    print(f"[QR ENGINE] Trigger Active in: Tickets, PX Client, Reseller ({RESELLER_CATEGORY_ID}), Custom Panel ({CUSTOM_PANEL_CATEGORY_ID})", flush=True)
     print(f"==========================================\n", flush=True)
 
     guild = bot.get_guild(MY_SERVER_ID)
@@ -1016,14 +1028,18 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # --- QR ALLOWED CHECK (Tickets & PX Client Channels) ---
+    # --- COMPREHENSIVE QR ALLOWED CHECK ---
     is_ticket_by_topic = bool(message.channel.topic and "Ticket #" in message.channel.topic)
     
+    cat_id = message.channel.category_id if hasattr(message.channel, 'category_id') else None
     cat_name = message.channel.category.name.lower() if message.channel.category else ""
+    
     is_in_allowed_category = (
-        (hasattr(message.channel, 'category_id') and message.channel.category_id == TICKET_CATEGORY_ID)
+        (cat_id in QR_ALLOWED_CATEGORY_IDS)
         or "client" in cat_name 
         or "ticket" in cat_name
+        or "reseller" in cat_name
+        or "custom" in cat_name
     )
     is_client_channel = (message.channel.id == PX_CLIENT_CHANNEL_ID)
 
@@ -1386,13 +1402,13 @@ async def help_command(interaction: discord.Interaction):
             "**Store & Operations**\n"
             "• `/pxticketsetup` — Refresh & post dynamic product tickets\n"
             "• `/giveaway` — Host a verified clean giveaway\n"
-            "• `qr` — Auto-dispenses payment scanner (Works in Tickets & Client Channels)\n\n"
+            "• `qr` — Auto-dispenses payment scanner (Tickets, PX Client, Reseller & Custom Categories)\n\n"
             "**Administration & Moderation**\n"
             "• `/clear <amount>` — Purge chat history quickly\n"
             "• `/setpx` — Auto-apply `PX | ` tag across all members\n"
             "• `/ping` — Check bot latency\n\n"
             "**Economy & Games (In <#{OWO_CHANNEL_ID}>)**\n"
-            "• `owo cash` / `/owo cash` — View coin reserves\n"
+            "• `owo cash` / `/owo cash` — View coin reserves (Default: 10,000)\n"
             "• `owo daily` — Claim daily 777 bonus coins\n"
             "• `owo mine <bet>` / `/owo mine <bet>` — Interactive 3x3 Mines\n"
             "• `owo cf <bet> [h/t]` — 50/50 Coin Flip\n"
