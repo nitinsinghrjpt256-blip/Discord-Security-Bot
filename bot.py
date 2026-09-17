@@ -36,6 +36,11 @@ intents.reactions = True
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977  # Sole Authorized Closer & Unlimited Wealth
 
+# Hardcoded Whitelisted Bots (Anti-Nuke allows ONLY these IDs)
+WHITELISTED_BOT_IDS = [
+    1550169495681638541
+]
+
 AUTO_ROLE_IDS = [
     1525217661691236483,  # Family Role
     1536661490260770926   # PC Community Role
@@ -486,7 +491,6 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
-        # Clean display name only (strip duplicate PX tags if any)
         raw_display = user.global_name or user.display_name
         for prefix in ["PX |", "PX|", "px |", "px|", "PX ", "px "]:
             if raw_display.startswith(prefix):
@@ -838,6 +842,7 @@ async def on_ready():
     print(f"\n==========================================", flush=True)
     print(f"[ONLINE] Logged in as: {bot.user.name} ({bot.user.id})", flush=True)
     print(f"[SECURE] Authorized ONLY for Guild ID: {MY_SERVER_ID}", flush=True)
+    print(f"[WHITELIST] Allowed Bots: {WHITELISTED_BOT_IDS}", flush=True)
     print(f"[ECONOMY] Default Balance: {DEFAULT_COINS:,} | Daily: 777 | Admin: Unlimited (∞)", flush=True)
     print(f"[TICKET ACCESS] Only Admin ID ({MY_USER_ID}) can close tickets!", flush=True)
     print(f"[CLEANER LIMIT] Auto-Inactivity Warning/Close locked ONLY to Category: {TICKET_CATEGORY_ID}", flush=True)
@@ -912,14 +917,19 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 13. Member Events (Auto-Roles, Luxury Welcome DM, No PX Prefix) ---
+# --- 13. Member Events (Anti-Nuke with Whitelist Check) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
         return
     guild = member.guild
 
+    # 1. Zero-Tolerance Anti-Bot (Except Whitelisted Bots)
     if member.bot:
+        if member.id in WHITELISTED_BOT_IDS:
+            print(f"[WHITELIST] Authorized Bot Joined: {member.name} ({member.id})", flush=True)
+            return
+
         inviter = None
         try:
             async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.bot_add):
@@ -938,7 +948,6 @@ async def on_member_join(member):
             await execute_antinuke_punishment(guild, inviter, f"Attempted to Add Bot: {member.name}")
         return
 
-    # Auto-Roles Assigned (Family & PC Community)
     roles_to_add = []
     for r_id in AUTO_ROLE_IDS:
         role_obj = guild.get_role(r_id)
@@ -952,7 +961,6 @@ async def on_member_join(member):
         except Exception as e:
             print(f"[AUTO-ROLE ERROR]: {e}", flush=True)
 
-    # Clean Name Retrieval for Tracking
     raw_name = member.global_name or member.display_name
 
     inviter = None
@@ -1080,7 +1088,6 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # --- COMPREHENSIVE QR ALLOWED CHECK ---
     is_ticket_by_topic = bool(message.channel.topic and "Ticket #" in message.channel.topic)
     cat_id = message.channel.category_id if hasattr(message.channel, 'category_id') else None
     cat_name = message.channel.category.name.lower() if message.channel.category else ""
@@ -1643,12 +1650,11 @@ async def resetnames(interaction: discord.Interaction):
         if guild.me.top_role <= member.top_role:
             continue
 
-        # If member has a custom nickname, reset it to None (reverts to original Discord Display Name)
         if member.nick is not None:
             try:
                 await member.edit(nick=None, reason="Admin reset nicknames to default display name")
                 reset_count += 1
-                await asyncio.sleep(0.4)  # Rate-limit buffer
+                await asyncio.sleep(0.4)
             except Exception:
                 pass
 
@@ -1828,7 +1834,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 16. Execution Start ---
+# --- 16. Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
