@@ -36,9 +36,9 @@ intents.reactions = True
 MY_SERVER_ID = 1525181999147388958
 MY_USER_ID = 1525179499602509977  # Sole Authorized Closer & Unlimited Wealth
 
-# Hardcoded Whitelisted Bots (Anti-Nuke allows ONLY these IDs)
+# Hardcoded Whitelisted Bots (Updated with New App ID)
 WHITELISTED_BOT_IDS = [
-    1550169495681638541
+    1550219202068090937
 ]
 
 AUTO_ROLE_IDS = [
