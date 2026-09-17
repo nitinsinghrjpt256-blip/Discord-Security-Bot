@@ -145,7 +145,7 @@ async def generate_transcript(channel: discord.TextChannel) -> discord.File:
     messages = [msg async for msg in channel.history(limit=500, oldest_first=True)]
     for msg in messages:
         timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
-        author = f"{msg.author.name}#{msg.author.discriminator}" if msg.author.discriminator != '0' else msg.author.name
+        author = msg.author.display_name
         content = msg.clean_content or "[No text content]"
         buffer.write(f"[{timestamp}] {author}: {content}\n")
         if msg.attachments:
@@ -183,7 +183,7 @@ class TicketRatingView(discord.ui.View):
                 description=(
                     f"A customer submitted a rating for their closed ticket.\n\n"
                     f"• **Ticket Name:** `#{self.ticket_name}`\n"
-                    f"• **Customer:** {interaction.user.mention} (`{interaction.user.name}`)\n"
+                    f"• **Customer:** {interaction.user.mention} (`{interaction.user.display_name}`)\n"
                     f"• **Rating Given:** {stars_display} (`{stars}/5 Stars`)\n"
                     f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:R>"
                 ),
@@ -254,7 +254,7 @@ class TicketCloseView(discord.ui.View):
                     f"A ticket has been permanently closed by Admin.\n\n"
                     f"• **Ticket Channel:** `#{channel.name}`\n"
                     f"• **Opened By:** {ticket_creator.mention if ticket_creator else 'Unknown'}\n"
-                    f"• **Closed By:** {user.mention} (`{user.name}`)\n"
+                    f"• **Closed By:** {user.mention} (`{user.display_name}`)\n"
                     f"• **Transcript:** Attached below (`.txt`)\n"
                     f"• **Timestamp:** <t:{int(datetime.utcnow().timestamp())}:F>"
                 ),
@@ -273,10 +273,10 @@ class TicketCloseView(discord.ui.View):
                 dm_embed = discord.Embed(
                     title="✦  PERSISTX • TICKET CLOSED RECEIPT  ✦",
                     description=(
-                        f"Hello **{ticket_creator.name}**,\n\n"
+                        f"Hello **{ticket_creator.display_name}**,\n\n"
                         f"Aapka support ticket (`#{channel.name}`) close kar diya gaya hai.\n\n"
                         f"• **Server:** `{guild.name}`\n"
-                        f"• **Closed By:** `{user.name}`\n"
+                        f"• **Closed By:** `{user.display_name}`\n"
                         f"• **Status:** `Resolved / Completed`\n\n"
                         f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
                         f"  ⭐ **RATE OUR ASSISTANCE**\n"
@@ -312,6 +312,8 @@ bot = SecurityBot()
 
 
 # --- 5. Economy & Identity Helpers ---
+DEFAULT_COINS = 10000
+
 def get_user_balance(user_id: int) -> int:
     if user_id == MY_USER_ID:
         return 999_999_999_999
@@ -388,7 +390,7 @@ async def execute_antinuke_punishment(guild: discord.Guild, executor: discord.Me
         if owner and owner.id != executor.id:
             await owner.send(
                 f"🚨 **HIGH SECURITY ANTI-NUKE ALERT** 🚨\n\n"
-                f"• **Offender:** `{executor.name}` (`{executor.id}`)\n"
+                f"• **Offender:** `{executor.display_name}` (`{executor.id}`)\n"
                 f"• **Action:** `{action}`\n"
                 f"• **Status:** Roles Stripped & Ban Applied Immediately."
             )
@@ -484,9 +486,17 @@ class DynamicTicketSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Ticket category nahi mili! Check category ID.", ephemeral=True)
             return
 
-        clean_name = "".join(c for c in user.name.lower() if c.isalnum() or c in ['-', '_'])[:20]
-        channel_name = clean_name
+        # Clean display name only (strip duplicate PX tags if any)
+        raw_display = user.global_name or user.display_name
+        for prefix in ["PX |", "PX|", "px |", "px|", "PX ", "px "]:
+            if raw_display.startswith(prefix):
+                raw_display = raw_display[len(prefix):].strip()
 
+        clean_name = "".join(c for c in raw_display.lower() if c.isalnum() or c in ['-', '_'])[:20]
+        if not clean_name:
+            clean_name = f"user-{user.id % 10000}"
+            
+        channel_name = clean_name
         current_ticket_num = get_next_ticket_number()
 
         overwrites = {
@@ -502,7 +512,7 @@ class DynamicTicketSelect(discord.ui.Select):
                 name=channel_name,
                 category=category,
                 overwrites=overwrites,
-                topic=f"Ticket #{current_ticket_num} | User: {user.name} ({user.id}) | Item: {selected_product}"
+                topic=f"Ticket #{current_ticket_num} | User: {raw_display} ({user.id}) | Item: {selected_product}"
             )
         except Exception as e:
             await interaction.followup.send(f"❌ Ticket create error: {e}", ephemeral=True)
@@ -516,7 +526,7 @@ class DynamicTicketSelect(discord.ui.Select):
                     f"A new ticket has been opened by {user.mention}.\n\n"
                     f"• **Ticket Channel:** {ticket_channel.mention} (`#{channel_name}`)\n"
                     f"• **Ticket ID:** `#{current_ticket_num}`\n"
-                    f"• **User:** `{user.name}` (`{user.id}`)\n"
+                    f"• **User:** `{raw_display}` (`{user.id}`)\n"
                     f"• **Selected Item:** `{selected_product}`\n"
                     f"• **Created At:** <t:{int(datetime.utcnow().timestamp())}:F>"
                 ),
@@ -545,7 +555,7 @@ class DynamicTicketSelect(discord.ui.Select):
         embed = discord.Embed(
             title="✦  PERSISTX • SUPPORT DESK  ✦",
             description=(
-                f"Welcome {user.mention}! Your private ticket is ready.\n\n"
+                f"Welcome {user.mention} (**{raw_display}**)! Your private ticket is ready.\n\n"
                 f"• **Ticket ID:** `#{current_ticket_num}`\n"
                 f"• **Item Selected:** `{selected_product}`\n"
                 f"• **Ticket Reason:** `{reason_text}`\n\n"
@@ -902,7 +912,7 @@ async def on_guild_role_delete(role):
         await execute_antinuke_punishment(guild, executor, f"Role Deletion: @{role.name}")
 
 
-# --- 13. Member Events ---
+# --- 13. Member Events (Auto-Roles, Luxury Welcome DM, No PX Prefix) ---
 @bot.event
 async def on_member_join(member):
     if member.guild.id != MY_SERVER_ID:
@@ -928,6 +938,7 @@ async def on_member_join(member):
             await execute_antinuke_punishment(guild, inviter, f"Attempted to Add Bot: {member.name}")
         return
 
+    # Auto-Roles Assigned (Family & PC Community)
     roles_to_add = []
     for r_id in AUTO_ROLE_IDS:
         role_obj = guild.get_role(r_id)
@@ -941,12 +952,8 @@ async def on_member_join(member):
         except Exception as e:
             print(f"[AUTO-ROLE ERROR]: {e}", flush=True)
 
-    if member.id != guild.owner_id:
-        try:
-            if guild.me.top_role > member.top_role and not member.display_name.upper().startswith("PX"):
-                await member.edit(nick=f"PX | {member.display_name}"[:32], reason="Auto PX tag on join")
-        except Exception:
-            pass
+    # Clean Name Retrieval for Tracking
+    raw_name = member.global_name or member.display_name
 
     inviter = None
     try:
@@ -993,7 +1000,7 @@ async def on_member_join(member):
                 f"Hey {member.mention}, welcome to **{guild.name}**!\n"
                 f"We're glad to have you with us in **PX FAMILY**.\n\n"
                 f"**Member Information**\n"
-                f"• **Username:** `{member.name}`\n"
+                f"• **Name:** `{raw_name}`\n"
                 f"• **Invited By:** {inviter_display}\n"
                 f"• **Total Invites:** `{total_invites}`\n\n"
                 f"• **Member Count:** `#{guild.member_count}`\n\n"
@@ -1014,7 +1021,7 @@ async def on_member_join(member):
         dm_embed = discord.Embed(
             title="✦  WELCOME TO PERSISTX OFFICIAL COMMUNITY  ✦",
             description=(
-                f"Hello **{member.name}**, welcome to **{guild.name}**! 🚀\n\n"
+                f"Hello **{raw_name}**, welcome to **{guild.name}**! 🚀\n\n"
                 f"We are delighted to have you as part of the **PX FAMILY**.\n\n"
                 f"╭─────────────────────────────────╮\n"
                 f"  📌 **QUICK ACCESS & GUIDELINES**\n"
@@ -1025,8 +1032,7 @@ async def on_member_join(member):
                 f"╭─────────────────────────────────╮\n"
                 f"  💎 **AUTOMATED PRIVILEGES**\n"
                 f"╰─────────────────────────────────╯\n"
-                f"• You have been automatically assigned **Family & Community** roles.\n"
-                f"• Your profile has been formatted with the verified `PX | ` prefix.\n\n"
+                f"• You have been automatically assigned **Family & Community** roles.\n\n"
                 f"*For official panel purchases or trial keys, please open a private ticket in <#{TICKET_PANEL_CHANNEL_ID}>.*"
             ),
             color=0xED4245
@@ -1036,7 +1042,7 @@ async def on_member_join(member):
         dm_embed.set_footer(text="PERSISTX OFFICIAL STORE © 2026 • Verified Customer Portal", icon_url=guild.icon.url if guild.icon else None)
         dm_embed.timestamp = datetime.utcnow()
         await member.send(embed=dm_embed)
-        print(f"[WELCOME DM SUCCESS] Sent luxury welcome DM to {member.name}", flush=True)
+        print(f"[WELCOME DM SUCCESS] Sent luxury welcome DM to {raw_name}", flush=True)
     except Exception as e:
         print(f"[WELCOME DM FAILED]: Could not send DM to {member.name}: {e}", flush=True)
 
@@ -1052,18 +1058,19 @@ async def on_member_remove(member):
         user_invites[inviter_id] -= 1
 
     if leave_channel:
+        raw_name = member.global_name or member.display_name
         leave_text = (
             f"╭─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╮\n"
-            f"  ✧ 𝐆𝐨𝐨𝐝𝐛𝐲𝐞 {member.name} ✧\n"
+            f"  ✧ 𝐆𝐨𝐨𝐝𝐛𝐲𝐞 {raw_name} ✧\n"
             f"╰─── ･ ｡ﾟ☆: *.☽ .* :☆ﾟ. ───╯\n\n"
-            f"> 🚪 **Member Left:** `{member.name}`\n"
+            f"> 🚪 **Member Left:** `{raw_name}`\n"
             f"> 🔗 **Invited By:** <@{inviter_id}>\n\n"
             f"*We hope to see you again!* 🥀"
         )
         await send_custom_channel_msg(leave_channel, "PX LEAVE BOT", content=leave_text)
 
 
-# --- 14. Message Event (Universal QR & Complete OwO Bot Engine) ---
+# --- 14. Message Event (Universal QR & OwO RPG Engine) ---
 @bot.event
 async def on_message(message):
     global server_prefix, server_lottery_pot
@@ -1073,7 +1080,7 @@ async def on_message(message):
     content = message.content.strip()
     lowered = content.lower()
 
-    # --- QR ALLOWED CHECK (Tickets, PX Client, Reseller, Custom Panel) ---
+    # --- COMPREHENSIVE QR ALLOWED CHECK ---
     is_ticket_by_topic = bool(message.channel.topic and "Ticket #" in message.channel.topic)
     cat_id = message.channel.category_id if hasattr(message.channel, 'category_id') else None
     cat_name = message.channel.category.name.lower() if message.channel.category else ""
@@ -1129,9 +1136,7 @@ async def on_message(message):
         await message.channel.send("✅ Dynamic ticket panel successfully refreshed & sent!")
         return
 
-    # =========================================================================
-    # COMPLETE OWO RPG & SOCIAL BOT ENGINE (Prefix: owo, w, or custom prefix)
-    # =========================================================================
+    # OwO RPG & Social System
     has_prefix = False
     args_str = ""
 
@@ -1153,7 +1158,6 @@ async def on_message(message):
             await message.channel.send(ACCESS_DENIED_MSG)
             return
 
-        # Restrict OwO commands exclusively to OWO_CHANNEL_ID
         if message.channel.id != OWO_CHANNEL_ID:
             await message.channel.send(f"❌ OwO RPG commands sirf <#{OWO_CHANNEL_ID}> me allow hain!", delete_after=5)
             return
@@ -1163,7 +1167,6 @@ async def on_message(message):
         author = message.author
         now = datetime.utcnow()
 
-        # ----------------- 1. ECONOMY & CORE -----------------
         if cmd in ["daily"]:
             last_claim = daily_cooldowns.get(author.id)
             if last_claim and (now - last_claim) < timedelta(hours=24):
@@ -1265,7 +1268,6 @@ async def on_message(message):
             inv[item] = inv.get(item, 0) + 1
             await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🛍️ **{author.display_name}** bought 1x **{item.upper()}** for **{cost:,}** Cowoncy! (Inv: `{inv[item]}`)")
 
-        # ----------------- 2. HUNTING, ZOO & BATTLING -----------------
         elif cmd in ["hunt", "h"]:
             last_hunt = hunt_cooldowns.get(author.id)
             if last_hunt and (now - last_hunt) < timedelta(seconds=15):
@@ -1390,7 +1392,6 @@ async def on_message(message):
             pct = int((collected / total_species) * 100)
             await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"📖 **OwOdex Progress for {author.display_name}:** `{collected}/{total_species}` ({pct}% Complete) 🐾")
 
-        # ----------------- 3. GAMBLING -----------------
         elif cmd in ["slots", "s"]:
             if len(parts) < 2:
                 await send_custom_channel_msg(message.channel, "PX OWO BOT", content="❌ Usage: `owo s <amount>`")
@@ -1493,7 +1494,6 @@ async def on_message(message):
             server_lottery_entries[author.id] = server_lottery_entries.get(author.id, 0) + tickets
             await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎟️ **{author.display_name}** bought `{tickets}` lottery tickets! Current Pot: **{server_lottery_pot:,}** Cowoncy!")
 
-        # ----------------- 4. SOCIAL & FUN -----------------
         elif cmd in ["profile"]:
             target = message.mentions[0] if message.mentions else author
             disp_bal = format_balance(target.id)
@@ -1561,7 +1561,6 @@ async def on_message(message):
             answers = ["Yes, absolutely! 🔮", "No way 💀", "Signs point to yes ✨", "Ask again later 🤔", "Very doubtful ❌"]
             await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"🎱 **8-Ball says:** {random.choice(answers)}")
 
-        # ----------------- 5. ROLEPLAY EMOTES -----------------
         elif cmd in ["hug", "kiss", "slap", "pat", "bite", "cuddle"]:
             if len(message.mentions) == 0:
                 await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"❌ Mention someone to {cmd}!")
@@ -1581,13 +1580,12 @@ async def on_message(message):
             }
             await send_custom_channel_msg(message.channel, "PX OWO BOT", content=f"✧ **{author.display_name}** {self_actions[cmd]}")
 
-        # ----------------- 6. UTILITY & LEADERBOARD -----------------
         elif cmd in ["top", "leaderboard"]:
             sorted_richest = sorted(user_balances.items(), key=lambda x: x[1], reverse=True)[:5]
             desc = "🏆 **Richest Players in Server:**\n\n"
             for rank, (u_id, coins) in enumerate(sorted_richest, 1):
                 user_obj = bot.get_user(u_id)
-                u_name = user_obj.name if user_obj else f"User {u_id}"
+                u_name = user_obj.display_name if user_obj else f"User {u_id}"
                 desc += f"`#{rank}` **{u_name}** — `{coins:,}` Cowoncy\n"
             embed = discord.Embed(title="👑 PERSISTX OWO LEADERBOARD", description=desc, color=0xFEE75C)
             await send_custom_channel_msg(message.channel, "PX OWO BOT", embed=embed)
@@ -1629,6 +1627,34 @@ async def on_message(message):
 
 
 # --- 15. Slash Commands Suite ---
+@bot.tree.command(name="resetnames", description="Reset all members nicknames to their default Discord Display Name")
+async def resetnames(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
+        await interaction.response.send_message("❌ Access Denied: Administrator permission required!", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+    guild = interaction.guild
+    reset_count = 0
+
+    for member in guild.members:
+        if member.bot or member.id == guild.owner_id:
+            continue
+        if guild.me.top_role <= member.top_role:
+            continue
+
+        # If member has a custom nickname, reset it to None (reverts to original Discord Display Name)
+        if member.nick is not None:
+            try:
+                await member.edit(nick=None, reason="Admin reset nicknames to default display name")
+                reset_count += 1
+                await asyncio.sleep(0.4)  # Rate-limit buffer
+            except Exception:
+                pass
+
+    await interaction.followup.send(f"✅ Success! **{reset_count}** members ke nicknames reset karke unka **default Discord Name** set kar diya gaya hai (Saare double PX tags remove ho gaye).")
+
+
 @bot.tree.command(name="pxticketsetup", description="Deploy/Refresh the dynamic store ticket panel")
 async def pxticketsetup(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1742,29 +1768,6 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 **Pong!** WebSocket Latency: `{latency}ms` | System: `Online 24/7`")
 
 
-@bot.tree.command(name="setpx", description="Apply PX | prefix to all non-tagged server members")
-async def setpx(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator and interaction.user.id != MY_USER_ID:
-        await interaction.response.send_message("❌ Administrator permission required!", ephemeral=True)
-        return
-    await interaction.response.defer()
-    guild = interaction.guild
-    changed = 0
-    for member in guild.members:
-        if member.bot or member.id == guild.owner_id:
-            continue
-        if guild.me.top_role <= member.top_role:
-            continue
-        if not member.display_name.upper().startswith("PX"):
-            try:
-                await member.edit(nick=f"PX | {member.display_name}"[:32])
-                changed += 1
-                await asyncio.sleep(0.5)
-            except Exception:
-                pass
-    await interaction.followup.send(f"✅ Updated `{changed}` members with `PX | ` prefix.")
-
-
 class OwOGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="owo", description="OwO Mini-Game & Economy Slash System")
@@ -1812,8 +1815,8 @@ async def help_command(interaction: discord.Interaction):
             "• `/giveaway` — Host a verified clean giveaway\n"
             "• `qr` — Auto-dispenses payment scanner (Tickets, PX Client, Reseller & Custom Categories)\n\n"
             "**Administration & Moderation**\n"
+            "• `/resetnames` — Bulk reset all members to their default Discord display names\n"
             "• `/clear <amount>` — Purge chat history quickly\n"
-            "• `/setpx` — Auto-apply `PX | ` tag across all members\n"
             "• `/ping` — Check bot latency\n\n"
             "**Complete OwO RPG System (In <#{OWO_CHANNEL_ID}>)**\n"
             "• Prefix: `owo <cmd>` or `w <cmd>`\n"
@@ -1825,7 +1828,7 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- 16. Start ---
+# --- 16. Execution Start ---
 if __name__ == "__main__":
     keep_alive()
     token = os.environ.get("DISCORD_TOKEN")
